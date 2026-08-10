@@ -1,6 +1,6 @@
 {
   "name": "ketabcast",
-  "version": "0.2.0-alpha.2",
+  "version": "0.2.0-alpha.3",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -10,7 +10,11 @@
     "typecheck": "tsc --noEmit",
     "check:text": "node scripts/check-text-controls.mjs",
     "audio:inspect": "node scripts/audio-inspect.mjs",
-    "audio:upload": "node scripts/audio-upload.mjs"
+    "audio:upload": "node scripts/audio-upload.mjs",
+    "check:episodes": "node scripts/validate-episodes.mjs",
+    "factory:validate": "node scripts/content-factory.mjs --stage validate --slug all",
+    "factory:research": "node scripts/content-factory.mjs --stage research --slug all --out .factory-output",
+    "factory:script": "node scripts/content-factory.mjs --stage script --slug all --out .factory-output"
   },
   "dependencies": {
     "clsx": "^2.1.1",

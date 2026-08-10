@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "books": [
+    {
+      "slug": "atomic-habits",
+      "episodeId": "atomic-habits-ep1",
+      "title": "Atomic Habits",
+      "titleFa": "عادت‌های اتمی",
+      "author": "James Clear",
+      "authorFa": "جیمز کلیر",
+      "language": "en",
+      "outputLanguage": "fa-IR",
+      "rightsMode": "web-research-only",
+      "objectKey": "episodes/atomic-habits/atomic-habits-ep1-v1.mp3",
+      "officialSources": [
+        "https://jamesclear.com/atomic-habits",
+        "https://jamesclear.com/atomic-habits-summary"
+      ],
+      "searchQueries": [
+        "Atomic Habits James Clear official summary core ideas four laws",
+        "James Clear Atomic Habits interviews identity habits systems",
+        "Atomic Habits reputable review key concepts behavior change"
+      ]
+    },
+    {
+      "slug": "deep-work",
+      "episodeId": "deep-work-ep1",
+      "title": "Deep Work",
+      "titleFa": "کار عمیق",
+      "author": "Cal Newport",
+      "authorFa": "کال نیوپورت",
+      "language": "en",
+      "outputLanguage": "fa-IR",
+      "rightsMode": "web-research-only",
+      "objectKey": "episodes/deep-work/deep-work-ep1-v1.mp3",
+      "officialSources": [
+        "https://calnewport.com/deep-work-rules-for-focused-success-in-a-distracted-world/"
+      ],
+      "searchQueries": [
+        "Deep Work Cal Newport official rules focused success distracted world",
+        "Cal Newport Deep Work interviews four rules concentration",
+        "Deep Work reputable review key concepts deliberate focus"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,237 @@
+name: Online Content Factory
+
+on:
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: Book to process
+        required: true
+        default: all
+        type: choice
+        options: [all, atomic-habits, deep-work]
+      stage:
+        description: Highest stage to execute
+        required: true
+        default: script
+        type: choice
+        options: [research, script, audio, publish]
+      release_tag:
+        description: Exact release tag for publish stage
+        required: true
+        default: v0.2.0-beta.1
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+  statuses: write
+
+concurrency:
+  group: content-factory-${{ inputs.slug }}
+  cancel-in-progress: false
+
+jobs:
+  factory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GOOGLE_BOOKS_API_KEY: ${{ secrets.GOOGLE_BOOKS_API_KEY }}
+      GEMINI_RESEARCH_MODEL: ${{ vars.GEMINI_RESEARCH_MODEL || 'gemini-2.5-flash-lite' }}
+      GEMINI_SCRIPT_MODEL: ${{ vars.GEMINI_SCRIPT_MODEL || 'gemini-2.5-flash' }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_AI_MODEL: ${{ vars.CLOUDFLARE_AI_MODEL || '@cf/meta/llama-3.3-70b-instruct-fp8-fast' }}
+      R2_BUCKET_NAME: ${{ vars.R2_BUCKET_NAME }}
+      NEXT_PUBLIC_AUDIO_BASE_URL: ${{ vars.NEXT_PUBLIC_AUDIO_BASE_URL }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Validate repository contracts
+        run: |
+          npm run check:text
+          npm run check:episodes
+          npm run factory:validate
+
+      - name: Validate generation credentials
+        shell: bash
+        run: |
+          if [[ -z "$GEMINI_API_KEY" && ( -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ) ]]; then
+            echo "::error::Configure GEMINI_API_KEY or Cloudflare Workers AI credentials."
+            exit 1
+          fi
+
+      - name: Research and write scripts
+        shell: bash
+        run: |
+          if [[ "${{ inputs.stage }}" == "research" ]]; then FACTORY_STAGE="research"; else FACTORY_STAGE="script"; fi
+          node scripts/content-factory.mjs --slug "${{ inputs.slug }}" --stage "$FACTORY_STAGE" --out .factory-output
+
+      - name: Upload research/script evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: content-factory-${{ inputs.slug }}-${{ github.run_id }}
+          path: .factory-output
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Install audio toolchain
+        if: ${{ inputs.stage == 'audio' || inputs.stage == 'publish' }}
+        shell: bash
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install piper-tts==1.5.0 faster-whisper==1.2.1
+          if ! command -v ffmpeg >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y ffmpeg; fi
+          mkdir -p .cache/piper
+          python -m piper.download_voices fa_IR-amir-medium --data-dir .cache/piper
+
+      - name: Generate and QA Persian audio
+        if: ${{ inputs.stage == 'audio' || inputs.stage == 'publish' }}
+        shell: bash
+        run: |
+          . .venv/bin/activate
+          if [[ "${{ inputs.slug }}" == "all" ]]; then SLUGS="atomic-habits deep-work"; else SLUGS="${{ inputs.slug }}"; fi
+          for slug in $SLUGS; do
+            python -m piper -m fa_IR-amir-medium --data-dir .cache/piper --input-file ".factory-output/$slug/script.fa.txt" -f ".factory-output/$slug/episode.wav"
+            ffmpeg -hide_banner -loglevel error -y -i ".factory-output/$slug/episode.wav" -af "loudnorm=I=-16:LRA=11:TP=-1.5" -ar 44100 -ac 1 -b:a 96k ".factory-output/$slug/episode.mp3"
+            python scripts/audio-qa.py --audio ".factory-output/$slug/episode.mp3" --script ".factory-output/$slug/script.fa.txt" --out ".factory-output/$slug/audio-qa.json" --transcript-out ".factory-output/$slug/audio-qa-transcript.txt" --model small --threshold 0.60
+          done
+          node scripts/factory-audio-manifest.mjs --slug "${{ inputs.slug }}" --out .factory-output/audio-ingest.local.json
+          if [[ "${{ inputs.slug }}" == "all" ]]; then EXPECTED_COUNT=2; else EXPECTED_COUNT=1; fi
+          npm run audio:inspect -- --manifest .factory-output/audio-ingest.local.json --out .factory-output/audio-inspection.local.json --expected-count "$EXPECTED_COUNT"
+
+      - name: Upload audio QA evidence
+        if: ${{ inputs.stage == 'audio' || inputs.stage == 'publish' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: content-factory-audio-${{ inputs.slug }}-${{ github.run_id }}
+          path: .factory-output
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Validate publish configuration
+        if: ${{ inputs.stage == 'publish' }}
+        shell: bash
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is missing."; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is missing."; exit 1; }
+          test -n "$R2_BUCKET_NAME" || { echo "::error::R2_BUCKET_NAME repository variable is missing."; exit 1; }
+          test -n "$NEXT_PUBLIC_AUDIO_BASE_URL" || { echo "::error::NEXT_PUBLIC_AUDIO_BASE_URL repository variable is missing."; exit 1; }
+          [[ "$NEXT_PUBLIC_AUDIO_BASE_URL" == https://* ]] || { echo "::error::NEXT_PUBLIC_AUDIO_BASE_URL must use HTTPS."; exit 1; }
+
+      - name: Upload verified audio to R2
+        if: ${{ inputs.stage == 'publish' }}
+        run: npm run audio:upload -- --report .factory-output/audio-inspection.local.json --bucket "$R2_BUCKET_NAME"
+
+      - name: Promote verified episode metadata
+        if: ${{ inputs.stage == 'publish' }}
+        run: |
+          node scripts/factory-promote.mjs --slug "${{ inputs.slug }}" --out .factory-output --inspection .factory-output/audio-inspection.local.json
+          npm run check:episodes
+          npm run check:text
+          npm run lint
+          npm run typecheck
+          npm run build
+          git diff --check
+
+      - name: Create publication PR
+        if: ${{ inputs.stage == 'publish' }}
+        id: publication
+        shell: bash
+        run: |
+          BRANCH="agent/generated-audio-${{ github.run_id }}"
+          git config user.name "ketabcast-content-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add src/content/episodes.json content/evidence
+          git commit -m "content: publish generated KetabCast audio (#8)"
+          HEAD_SHA="$(git rev-parse HEAD)"
+          git push -u origin "$BRANCH"
+          BODY_FILE="$RUNNER_TEMP/publication-pr.md"
+          printf '%s\n' "Tracks #8" "" "Automated online content factory publication." "" "- grounded/legal-source research" "- independent Persian podcast scripts" "- Piper fa_IR-amir-medium narration" "- faster-whisper round-trip QA" "- FFmpeg mastering" "- R2 upload + SHA-256 round-trip verification" "- placeholder -> ready only after integrity PASS" "" "Factory run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > "$BODY_FILE"
+          PR_URL="$(gh pr create --base main --head "$BRANCH" --title "content: publish verified KetabCast audio" --body-file "$BODY_FILE")"
+          PR_NUMBER="${PR_URL##*/}"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch CI for publication branch
+        if: ${{ inputs.stage == 'publish' }}
+        shell: bash
+        run: |
+          gh workflow run ci.yml --ref "${{ steps.publication.outputs.branch }}"
+          RUN_ID=""
+          for attempt in {1..30}; do
+            RUN_JSON="$(gh run list --workflow ci.yml --branch "${{ steps.publication.outputs.branch }}" --event workflow_dispatch --limit 10 --json databaseId,status,conclusion,url,headSha)"
+            RUN_ID="$(echo "$RUN_JSON" | jq -r --arg sha "${{ steps.publication.outputs.head_sha }}" '[.[] | select(.headSha == $sha)][0].databaseId // empty')"
+            [[ -n "$RUN_ID" ]] && break
+            sleep 5
+          done
+          test -n "$RUN_ID" || { echo "::error::Dispatched CI run was not found."; exit 1; }
+          gh run watch "$RUN_ID" --exit-status --interval 10
+          RUN_URL="$(gh run view "$RUN_ID" --json url --jq .url)"
+          gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/${{ steps.publication.outputs.head_sha }}" -f state=success -f context="Online Content Factory / CI" -f target_url="$RUN_URL" -f description="Dispatched CI passed"
+          gh pr comment "${{ steps.publication.outputs.pr_number }}" --body "Automated evidence: CI passed - $RUN_URL"
+
+      - name: Merge publication PR
+        if: ${{ inputs.stage == 'publish' }}
+        id: merge
+        shell: bash
+        run: |
+          gh pr merge "${{ steps.publication.outputs.pr_number }}" --squash --delete-branch --match-head-commit "${{ steps.publication.outputs.head_sha }}"
+          MERGE_SHA="$(gh pr view "${{ steps.publication.outputs.pr_number }}" --json mergeCommit --jq .mergeCommit.oid)"
+          test -n "$MERGE_SHA" || { echo "::error::Could not resolve exact merge SHA."; exit 1; }
+          echo "merge_sha=$MERGE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch post-merge CI and Pages
+        if: ${{ inputs.stage == 'publish' }}
+        shell: bash
+        run: |
+          MERGE_SHA="${{ steps.merge.outputs.merge_sha }}"
+          gh workflow run ci.yml --ref main
+          gh workflow run deploy.yml --ref main
+          for workflow in ci.yml deploy.yml; do
+            RUN_ID=""
+            for attempt in {1..40}; do
+              RUN_JSON="$(gh run list --workflow "$workflow" --branch main --event workflow_dispatch --limit 20 --json databaseId,status,conclusion,url,headSha)"
+              RUN_ID="$(echo "$RUN_JSON" | jq -r --arg sha "$MERGE_SHA" '[.[] | select(.headSha == $sha)][0].databaseId // empty')"
+              [[ -n "$RUN_ID" ]] && break
+              sleep 5
+            done
+            test -n "$RUN_ID" || { echo "::error::Post-merge workflow $workflow not found."; exit 1; }
+            gh run watch "$RUN_ID" --exit-status --interval 10
+          done
+
+      - name: Exact-SHA tag and GitHub prerelease
+        if: ${{ inputs.stage == 'publish' }}
+        shell: bash
+        run: |
+          TAG="${{ inputs.release_tag }}"
+          MERGE_SHA="${{ steps.merge.outputs.merge_sha }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then echo "::error::Tag $TAG already exists; refusing to move it."; exit 1; fi
+          git fetch origin main --tags
+          git tag -a "$TAG" "$MERGE_SHA" -m "KetabCast $TAG - automated production audio"
+          git push origin "$TAG"
+          NOTES="$RUNNER_TEMP/release-notes.md"
+          printf '%s\n' "## Automated KetabCast production audio" "" "- Factory run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "- Publication PR: ${{ steps.publication.outputs.pr_url }}" "- Exact SHA: $MERGE_SHA" "- R2 round-trip SHA-256 verification: PASS" "- Audio STT/script QA: PASS" "- Books: ${{ inputs.slug }}" "- SoundHelix removed only for successfully promoted production episodes." "" "Issue #8 remains open until all five v0.2 MVP episodes and mobile/network evidence are complete." > "$NOTES"
+          gh release create "$TAG" --verify-tag --title "KetabCast $TAG - Automated Audio" --notes-file "$NOTES" --prerelease
+          gh issue comment 8 --body "Automated content milestone published. Tag: $TAG | Exact SHA: $MERGE_SHA | PR: ${{ steps.publication.outputs.pr_url }} | Factory run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

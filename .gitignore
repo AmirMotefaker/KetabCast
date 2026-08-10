@@ -43,3 +43,6 @@ next-env.d.ts
 /.local-audio/
 /audio-ingest.local.json
 /audio-inspection.local.json
+/.factory-output/
+/.cache/piper/
+/.venv/
