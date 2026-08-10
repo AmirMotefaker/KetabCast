@@ -57,7 +57,7 @@ MIT
 
 **فاز جاری:** `v0.2.0 — Audio واقعی`
 
-وضعیت v0.2.0-alpha.8: انتقال artifactهای hidden کارخانه در GitHub Actions اصلاح شده است؛ `.factory-output` با `include-hidden-files` آپلود می‌شود و قبل از upload یک guard برای فایل‌های secret-like و نشت credential اجرا می‌شود.
+وضعیت v0.2.0-alpha.9: پس از تمام‌شدن سهمیه رایگان روزانه Cloudflare Workers AI، کارخانه بدون secret یا کارت جدید به GitHub Models و مدل `openai/gpt-4.1-mini` سوییچ می‌کند؛ تمام gateهای محتوایی و صوتی حفظ می‌شوند.
 
 ### GitHub lifecycle
 

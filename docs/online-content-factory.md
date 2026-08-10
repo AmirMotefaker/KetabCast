@@ -176,3 +176,29 @@ Before either upload, the workflow runs a safety guard that:
 
 This setting affects Actions QA artifacts only. It does not publish production
 audio or change episode readiness.
+## Free AI provider failover
+
+The free-first inference chain is:
+
+1. Gemini, when `GEMINI_API_KEY` is configured.
+2. Cloudflare Workers AI while its free daily allocation is available.
+3. GitHub Models through the workflow-scoped `GITHUB_TOKEN`.
+
+The GitHub Models fallback uses `openai/gpt-4.1-mini` by default and requires
+only the workflow permission `models: read`; no additional API secret or
+payment method is required for included free usage.
+
+When Cloudflare reports its daily free-allocation quota error, the factory marks
+Cloudflare exhausted for the remainder of that run and sends subsequent
+research, planning and narration-section requests directly to GitHub Models.
+
+To stay inside free prototyping limits, the fallback:
+
+- spaces requests by at least 4.5 seconds
+- caps generation at 4,000 output tokens
+- compacts very large prompts while preserving the instruction head and source
+  dossier tail
+- keeps all existing legal-source, structured-envelope, section-length and
+  final transcript QA gates
+
+Generation evidence records the actual provider/model path.

@@ -129,17 +129,169 @@ async function geminiGenerate({
   });
 }
 
+const GITHUB_MODELS_MODEL =
+  process.env.KETABCAST_GITHUB_MODELS_MODEL?.trim() ||
+  "openai/gpt-4.1-mini";
+const GITHUB_MODELS_PROMPT_CHAR_LIMIT = 10000;
+const GITHUB_MODELS_MIN_INTERVAL_MS = 4500;
+
+let cloudflareDailyQuotaExhausted = false;
+let githubModelsLastRequestAt = 0;
+
+function isCloudflareDailyQuotaError(error) {
+  const message = String(error?.message ?? error).toLowerCase();
+  return (
+    message.includes("http 429") &&
+    (
+      message.includes("daily free allocation") ||
+      message.includes("10,000 neurons") ||
+      message.includes('"code":4006')
+    )
+  );
+}
+
+function currentFreeProviderLabel() {
+  return cloudflareDailyQuotaExhausted
+    ? "cloudflare-workers-ai+github-models"
+    : "cloudflare-workers-ai";
+}
+
+function currentFreeModelLabel() {
+  return cloudflareDailyQuotaExhausted
+    ? `${CLOUDFLARE_MODEL} -> ${GITHUB_MODELS_MODEL}`
+    : CLOUDFLARE_MODEL;
+}
+
+function compactGitHubModelsPrompt(prompt) {
+  const text = String(prompt);
+  if (text.length <= GITHUB_MODELS_PROMPT_CHAR_LIMIT) {
+    return text;
+  }
+
+  const marker =
+    "\n\n[KetabCast note: middle context compacted for GitHub Models " +
+    "free-tier input limits.]\n\n";
+  const remaining =
+    GITHUB_MODELS_PROMPT_CHAR_LIMIT - marker.length;
+  const headLength = Math.floor(remaining / 2);
+  const tailLength = remaining - headLength;
+
+  return (
+    text.slice(0, headLength) +
+    marker +
+    text.slice(-tailLength)
+  );
+}
+
+async function githubModelsGenerate(
+  prompt,
+  { responseFormat = null, temperature = null } = {},
+) {
+  const token =
+    process.env.GH_TOKEN?.trim() ||
+    process.env.GITHUB_TOKEN?.trim();
+
+  if (!token) {
+    throw new Error(
+      "GitHub Models fallback requires GH_TOKEN/GITHUB_TOKEN.",
+    );
+  }
+
+  const elapsed = Date.now() - githubModelsLastRequestAt;
+  if (
+    githubModelsLastRequestAt > 0 &&
+    elapsed < GITHUB_MODELS_MIN_INTERVAL_MS
+  ) {
+    await sleep(GITHUB_MODELS_MIN_INTERVAL_MS - elapsed);
+  }
+
+  let effectivePrompt = compactGitHubModelsPrompt(prompt);
+
+  if (responseFormat?.type === "json_schema") {
+    effectivePrompt +=
+      "\n\nReturn exactly one valid JSON object and no Markdown. " +
+      "It must satisfy this schema:\n" +
+      JSON.stringify(responseFormat.json_schema ?? {});
+  } else if (responseFormat?.type === "json_object") {
+    effectivePrompt +=
+      "\n\nReturn exactly one valid JSON object and no Markdown.";
+  }
+
+  githubModelsLastRequestAt = Date.now();
+
+  const response = await fetchJsonWithRetry(
+    "https://models.github.ai/inference/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "X-GitHub-Api-Version": "2026-03-10",
+      },
+      body: JSON.stringify({
+        model: GITHUB_MODELS_MODEL,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are KetabCast's research and podcast writing engine. " +
+              "Be factual, copyright-safe, fluent in Persian, and follow " +
+              "the supplied legal-source constraints.",
+          },
+          {
+            role: "user",
+            content: effectivePrompt,
+          },
+        ],
+        temperature:
+          temperature ?? (responseFormat ? 0.1 : 0.3),
+        max_tokens: 4000,
+      }),
+    },
+  );
+
+  const content = response.choices?.[0]?.message?.content;
+
+  if (typeof content !== "string" || !content.trim()) {
+    throw new Error(
+      "GitHub Models returned an empty or unsupported response.",
+    );
+  }
+
+  return content.trim();
+}
+
 async function cloudflareGenerate(
   prompt,
   { responseFormat = null, temperature = null } = {},
 ) {
+  if (cloudflareDailyQuotaExhausted) {
+    console.warn(
+      `Cloudflare daily free quota is exhausted; using GitHub Models ` +
+        `${GITHUB_MODELS_MODEL}.`,
+    );
+
+    return githubModelsGenerate(prompt, {
+      responseFormat,
+      temperature,
+    });
+  }
+
   const token = process.env.CLOUDFLARE_API_TOKEN?.trim();
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
+
   if (!token || !accountId) {
-    throw new Error(
-      "Cloudflare fallback requires CLOUDFLARE_API_TOKEN and " +
-        "CLOUDFLARE_ACCOUNT_ID.",
+    console.warn(
+      `Cloudflare credentials are unavailable; using GitHub Models ` +
+        `${GITHUB_MODELS_MODEL}.`,
     );
+    cloudflareDailyQuotaExhausted = true;
+
+    return githubModelsGenerate(prompt, {
+      responseFormat,
+      temperature,
+    });
   }
 
   const url =
@@ -168,36 +320,59 @@ async function cloudflareGenerate(
     requestBody.response_format = responseFormat;
   }
 
-  const response = await fetchJsonWithRetry(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(requestBody),
-  });
+  try {
+    const response = await fetchJsonWithRetry(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
 
-  if (!response.success) {
-    throw new Error(`Workers AI error: ${JSON.stringify(response.errors)}`);
-  }
-
-  const value = response.result?.response;
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      throw new Error("Workers AI returned an empty string response.");
+    if (!response.success) {
+      throw new Error(
+        `Workers AI error: ${JSON.stringify(response.errors)}`,
+      );
     }
-    return trimmed;
-  }
 
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value;
-  }
+    const value = response.result?.response;
 
-  throw new Error(
-    `Workers AI returned an unsupported response type: ${typeof value}`,
-  );
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        throw new Error(
+          "Workers AI returned an empty string response.",
+        );
+      }
+      return trimmed;
+    }
+
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return value;
+    }
+
+    throw new Error(
+      `Workers AI returned an unsupported response type: ${typeof value}`,
+    );
+  } catch (error) {
+    if (!isCloudflareDailyQuotaError(error)) {
+      throw error;
+    }
+
+    cloudflareDailyQuotaExhausted = true;
+
+    console.warn(
+      "Cloudflare Workers AI daily free allocation is exhausted. " +
+        `Switching the remainder of this run to GitHub Models ` +
+        `${GITHUB_MODELS_MODEL}.`,
+    );
+
+    return githubModelsGenerate(prompt, {
+      responseFormat,
+      temperature,
+    });
+  }
 }
 
 function sourcePackForPrompt(pack) {
@@ -707,8 +882,8 @@ async function writeCloudflareLongformEpisode(book, research) {
   );
 
   return {
-    provider: "cloudflare-workers-ai",
-    model: CLOUDFLARE_MODEL,
+    provider: currentFreeProviderLabel(),
+    model: currentFreeModelLabel(),
     structuredMode: `longform-sections:${planMode}`,
     sections: sections.map((section) => ({
       label: section.label,
@@ -809,8 +984,8 @@ async function researchBook(book, pack) {
   }
 
   return {
-    provider: "cloudflare-workers-ai",
-    model: CLOUDFLARE_MODEL,
+    provider: currentFreeProviderLabel(),
+    model: currentFreeModelLabel(),
     text: generatedResearch,
     searchSources: [],
   };
@@ -886,10 +1061,11 @@ async function processBook(book, stage, outRoot) {
   if (
     !process.env.GEMINI_API_KEY?.trim() &&
     !(process.env.CLOUDFLARE_API_TOKEN?.trim() &&
-      process.env.CLOUDFLARE_ACCOUNT_ID?.trim())
+      process.env.CLOUDFLARE_ACCOUNT_ID?.trim()) &&
+    !(process.env.GH_TOKEN?.trim() || process.env.GITHUB_TOKEN?.trim())
   ) {
     throw new Error(
-      "Generation requires GEMINI_API_KEY or Cloudflare Workers AI fallback credentials.",
+      "Generation requires Gemini, Cloudflare Workers AI, or GitHub Models via GITHUB_TOKEN.",
     );
   }
 
