@@ -27,6 +27,7 @@ permissions:
   issues: write
   actions: write
   statuses: write
+  models: read
 
 concurrency:
   group: content-factory-${{ inputs.slug }}
@@ -44,6 +45,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_AI_MODEL: ${{ vars.CLOUDFLARE_AI_MODEL || '@cf/meta/llama-3.3-70b-instruct-fp8-fast' }}
+      KETABCAST_GITHUB_MODELS_MODEL: ${{ vars.KETABCAST_GITHUB_MODELS_MODEL || 'openai/gpt-4.1-mini' }}
       GH_TOKEN: ${{ github.token }}
 
     steps:
@@ -70,8 +72,8 @@ jobs:
       - name: Validate generation credentials
         shell: bash
         run: |
-          if [[ -z "$GEMINI_API_KEY" && ( -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ) ]]; then
-            echo "::error::Configure GEMINI_API_KEY or Cloudflare Workers AI credentials."
+          if [[ -z "$GEMINI_API_KEY" && ( -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ) && -z "$GH_TOKEN" ]]; then
+            echo "::error::Configure Gemini, Cloudflare Workers AI, or GitHub Models via GITHUB_TOKEN."
             exit 1
           fi
 
