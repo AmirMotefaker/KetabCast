@@ -129,7 +129,10 @@ async function geminiGenerate({
   });
 }
 
-async function cloudflareGenerate(prompt, { jsonOnly = false } = {}) {
+async function cloudflareGenerate(
+  prompt,
+  { responseFormat = null, temperature = null } = {},
+) {
   const token = process.env.CLOUDFLARE_API_TOKEN?.trim();
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
   if (!token || !accountId) {
@@ -143,37 +146,58 @@ async function cloudflareGenerate(prompt, { jsonOnly = false } = {}) {
     `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/` +
     CLOUDFLARE_MODEL;
 
+  const requestBody = {
+    messages: [
+      {
+        role: "system",
+        content:
+          "You are KetabCast's research and podcast writing engine. " +
+          "Be factual, copyright-safe and fluent in Persian.",
+      },
+      {
+        role: "user",
+        content: prompt,
+      },
+    ],
+    temperature:
+      temperature ?? (responseFormat ? 0.1 : 0.3),
+    max_tokens: 8192,
+  };
+
+  if (responseFormat) {
+    requestBody.response_format = responseFormat;
+  }
+
   const response = await fetchJsonWithRetry(url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are KetabCast's research and podcast writing engine. " +
-            "Be factual, copyright-safe and fluent in Persian.",
-        },
-        {
-          role: "user",
-          content:
-            jsonOnly
-              ? `${prompt}\n\nReturn JSON only. No Markdown fences.`
-              : prompt,
-        },
-      ],
-      temperature: 0.3,
-      max_tokens: 8192,
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.success) {
     throw new Error(`Workers AI error: ${JSON.stringify(response.errors)}`);
   }
-  return String(response.result?.response ?? "").trim();
+
+  const value = response.result?.response;
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new Error("Workers AI returned an empty string response.");
+    }
+    return trimmed;
+  }
+
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value;
+  }
+
+  throw new Error(
+    `Workers AI returned an unsupported response type: ${typeof value}`,
+  );
 }
 
 function sourcePackForPrompt(pack) {
@@ -252,6 +276,27 @@ const episodeSchema = {
   ],
 };
 
+const cloudflareEpisodeSchema = {
+  type: "object",
+  properties: {
+    title: { type: "string" },
+    description: { type: "string" },
+    transcript: { type: "string" },
+    keyIdeas: {
+      type: "array",
+      items: { type: "string" },
+    },
+    actionToday: { type: "string" },
+  },
+  required: [
+    "title",
+    "description",
+    "transcript",
+    "keyIdeas",
+    "actionToday",
+  ],
+};
+
 function scriptPrompt(book, research) {
   return `
 You are the senior Persian writer for KetabCast.
@@ -291,6 +336,40 @@ function extractJson(text) {
     if (first < 0 || last <= first) throw new Error("No JSON object found.");
     return JSON.parse(trimmed.slice(first, last + 1));
   }
+}
+
+function coerceJsonObject(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    return extractJson(value);
+  }
+
+  throw new Error(
+    `Structured episode output has unsupported type: ${typeof value}`,
+  );
+}
+
+function assertEpisodeEnvelope(value) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    typeof value.title !== "string" ||
+    typeof value.description !== "string" ||
+    typeof value.transcript !== "string" ||
+    !Array.isArray(value.keyIdeas) ||
+    value.keyIdeas.some((idea) => typeof idea !== "string") ||
+    typeof value.actionToday !== "string"
+  ) {
+    throw new Error(
+      "Structured episode response did not match the required envelope.",
+    );
+  }
+
+  return value;
 }
 
 function countWords(text) {
@@ -360,20 +439,28 @@ async function researchBook(book, pack) {
     }
   }
 
-  const text = await cloudflareGenerate(
+  const generatedResearch = await cloudflareGenerate(
     `${prompt}\n\nIMPORTANT: You do not have live web search in this fallback. ` +
       "Use only the supplied source pack and explicitly state uncertainty.",
   );
+
+  if (typeof generatedResearch !== "string") {
+    throw new Error(
+      "Workers AI research response must be plain text, not structured JSON.",
+    );
+  }
+
   return {
     provider: "cloudflare-workers-ai",
     model: CLOUDFLARE_MODEL,
-    text,
+    text: generatedResearch,
     searchSources: [],
   };
 }
 
 async function writeEpisode(book, research) {
   const prompt = scriptPrompt(book, research);
+
   if (process.env.GEMINI_API_KEY?.trim()) {
     try {
       const response = await geminiGenerate({
@@ -381,10 +468,14 @@ async function writeEpisode(book, research) {
         prompt,
         responseSchema: episodeSchema,
       });
+
       return {
         provider: "gemini",
         model: GEMINI_SCRIPT_MODEL,
-        value: extractJson(geminiText(response)),
+        structuredMode: "gemini-response-schema",
+        value: assertEpisodeEnvelope(
+          coerceJsonObject(geminiText(response)),
+        ),
       };
     } catch (error) {
       console.warn(
@@ -393,12 +484,74 @@ async function writeEpisode(book, research) {
     }
   }
 
-  const text = await cloudflareGenerate(prompt, { jsonOnly: true });
-  return {
-    provider: "cloudflare-workers-ai",
-    model: CLOUDFLARE_MODEL,
-    value: extractJson(text),
-  };
+  const attempts = [
+    {
+      name: "json-schema-primary",
+      responseFormat: {
+        type: "json_schema",
+        json_schema: cloudflareEpisodeSchema,
+      },
+    },
+    {
+      name: "json-schema-retry",
+      responseFormat: {
+        type: "json_schema",
+        json_schema: cloudflareEpisodeSchema,
+      },
+    },
+    {
+      name: "json-object-fallback",
+      responseFormat: {
+        type: "json_object",
+      },
+    },
+  ];
+
+  const errors = [];
+
+  for (let index = 0; index < attempts.length; index += 1) {
+    const attempt = attempts[index];
+
+    const attemptPrompt =
+      attempt.name === "json-object-fallback"
+        ? `${prompt}\n\nReturn one JSON object only. It must satisfy this JSON Schema:\n` +
+          JSON.stringify(cloudflareEpisodeSchema)
+        : prompt;
+
+    try {
+      const response = await cloudflareGenerate(attemptPrompt, {
+        responseFormat: attempt.responseFormat,
+        temperature: 0.1,
+      });
+
+      const value = assertEpisodeEnvelope(
+        coerceJsonObject(response),
+      );
+
+      return {
+        provider: "cloudflare-workers-ai",
+        model: CLOUDFLARE_MODEL,
+        structuredMode: attempt.name,
+        value,
+      };
+    } catch (error) {
+      const message = String(error?.message ?? error);
+      errors.push(`${attempt.name}: ${message}`);
+      console.warn(
+        `Workers AI structured episode attempt ${index + 1}/` +
+          `${attempts.length} failed (${attempt.name}): ${message}`,
+      );
+
+      if (index < attempts.length - 1) {
+        await sleep(1000 * (index + 1));
+      }
+    }
+  }
+
+  throw new Error(
+    "Workers AI structured episode generation failed after all attempts: " +
+      errors.join(" | "),
+  );
 }
 
 async function writeJson(path, value) {
@@ -433,12 +586,41 @@ async function processBook(book, stage, outRoot) {
 
   console.log(`Researching: ${book.slug}`);
   const research = await researchBook(book, sourcePack);
+  const metadataSources = [];
+
+  const googleBooks = sourcePack.metadata.googleBooks;
+  if (
+    googleBooks?.queryUrl &&
+    Array.isArray(googleBooks.items) &&
+    googleBooks.items.length > 0
+  ) {
+    metadataSources.push({
+      kind: "legal-metadata",
+      title: "Google Books",
+      url: googleBooks.queryUrl,
+    });
+  }
+
+  const openLibrary = sourcePack.metadata.openLibrary;
+  if (
+    openLibrary?.queryUrl &&
+    Array.isArray(openLibrary.docs) &&
+    openLibrary.docs.length > 0
+  ) {
+    metadataSources.push({
+      kind: "legal-metadata",
+      title: "Open Library",
+      url: openLibrary.queryUrl,
+    });
+  }
+
   const sourceRecords = [
     ...sourcePack.officialPages.map((page) => ({
       kind: "official-seed",
       title: page.title,
       url: page.url,
     })),
+    ...metadataSources,
     ...research.searchSources,
   ];
   const uniqueSources = [

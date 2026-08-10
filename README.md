@@ -57,7 +57,7 @@ MIT
 
 **فاز جاری:** `v0.2.0 — Audio واقعی`
 
-وضعیت v0.2.0-alpha.4: کارخانه آنلاین محتوا آماده است و GitHub Release Assets به‌عنوان storage رایگان production انتخاب شده است. هر MP3 قبل از ready شدن با API digest و download-back SHA-256 اعتبارسنجی می‌شود؛ R2 فقط backend اختیاری آینده است.
+وضعیت v0.2.0-alpha.5: Workers AI برای تولید اسکریپت اپیزود از Structured JSON Mode با schema و retry محدود استفاده می‌کند؛ source-count حالت Cloudflare-only نیز Google Books/Open Library را به‌عنوان منابع metadata قانونی لحاظ می‌کند.
 
 ### GitHub lifecycle
 

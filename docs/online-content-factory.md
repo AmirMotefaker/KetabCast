@@ -110,3 +110,21 @@ Optional:
 
 No secret value belongs in Git, evidence, artifacts, PR bodies or release
 notes.
+## Workers AI structured output reliability
+
+Episode generation uses Cloudflare Workers AI JSON Mode instead of relying on
+prompt-only JSON instructions.
+
+The Cloudflare path:
+
+1. requests `response_format.type = json_schema`
+2. supplies a lowercase JSON Schema for the episode envelope
+3. accepts either a structured object response or a JSON string response
+4. performs a bounded second schema attempt
+5. falls back to `json_object` only after schema attempts fail
+6. validates the envelope before deterministic content QA
+
+Successful Google Books and Open Library metadata queries are counted as legal
+source records alongside official pages and grounded-search sources. This keeps
+the source-count gate meaningful in Cloudflare-only mode without fabricating
+web-search results.
