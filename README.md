@@ -1,36 +1,50 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🎧 کتاب‌کست (KetabCast)
 
-## Getting Started
+**هر کتاب ارزشمند، یک اپیزود فارسی شنیدنی.**
 
-First, run the development server:
+کتاب‌کست یک محصول فارسی‌زبان و Open Source است که ایده‌ها و مفاهیم ارزشمند کتاب‌ها را به اپیزودهای پادکستی فارسی، کوتاه و شنیدنی تبدیل می‌کند؛ با کمک هوش مصنوعی.
 
-```bash
+## ✨ ویژگی‌ها
+
+- 🎧 تجربه Audio-first با پلیر اختصاصی
+- 📚 صفحه اختصاصی هر کتاب با ایده‌های کلیدی و Transcript
+- 📱 Mobile-first و کاملاً Responsive
+- 🌙 تم تاریک مدرن با لهجه بنفش
+- 🇮🇷 فارسی و راست‌چین (RTL) با فونت وزیرمتن
+- ⚡ Static Site Generation با Next.js
+- 🤖 معماری آماده برای AI Pipeline و TTS
+
+## 🛠️ Tech Stack
+
+- Next.js (App Router) + TypeScript
+- Tailwind CSS v4
+- Lucide React
+- GitHub Actions + GitHub Pages
+
+## 🏃‍♂️ اجرای لوکال
+
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+سپس باز کنید: http://localhost:3000/KetabCast
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 📦 خروجی Static
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+npm run build
 
-## Learn More
+پوشه out برای دیپلوی آماده است.
 
-To learn more about Next.js, take a look at the following resources:
+## 🗺️ Roadmap
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- v0.1.0 — Foundation ✅
+- v0.2.0 — Audio (TTS واقعی)
+- v0.3.0 — AI Pipeline
+- v1.0.0 — Production Platform
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## ⚖️ Disclaimer
 
-## Deploy on Vercel
+کتاب‌کست محتوای خلاصه و تحلیلی مستقل ارائه می‌کند و جایگزین مطالعه نسخه کامل کتاب نیست.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 📄 License
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT
