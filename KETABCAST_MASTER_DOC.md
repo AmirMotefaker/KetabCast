@@ -310,15 +310,18 @@ Next.js App Router, TS, Tailwind v4, تم تاریک/بنفش, RTL/وزیرمت�
 - [ ] ضبط/تولید ۵ اپیزود واقعی (صدای انسانی یا TTS باکیفیت) به‌عنوان MVP محتوایی
 - [x] قرارداد Audio metadata + URL strategy آماده CDN/R2 (`v0.2.0-alpha.1`)
 - [x] ابزار اعتبارسنجی/ingest صوت و guard کاراکترهای کنترلی (v0.2.0-alpha.2)
+- [x] کارخانه آنلاین محتوای free-first: legal web research → Persian script → Piper TTS → Whisper QA → R2 orchestration (`v0.2.0-alpha.3`)
 - [ ] یکپارچه‌سازی پلیر با فایل صوتی واقعی + CDN (Cloudflare R2)
 - [x] Progress/Seek، سرعت پخش، loading/error state و a11y پلیر (`v0.2.0-alpha.1`)
 - [ ] دانلود/آفلاین واقعی پس از ingest فایل‌های production
 - [ ] صفحه ترنسکریپت هم‌گام با پخش صدا (Karaoke-style highlight، اختیاری)
 - [ ] تست کیفیت روی موبایل واقعی (اینترنت ایران، اندروید رایج)
 
+> تصمیم ۲۰۲۶-۰۸-۱۰: برای سرعت v0.2، یک Content Factory بدون backend و مبتنی بر GitHub Actions جلو کشیده شد. Queue، Admin Dashboard، API پویا و معماری worker مقیاس‌پذیر همچنان متعلق به v0.3 هستند.
+
 ### 🔨 v0.3.0 — AI Pipeline
 - [ ] راه‌اندازی `packages/ai-pipeline` (Node worker + Queue)
-- [ ] یکپارچه‌سازی Claude API برای اسکریپت‌نویسی طبق پرامپت بخش ۹
+- [ ] تبدیل factory فعلی به LLM provider layer مقیاس‌پذیر (Gemini free-first؛ Claude/سایر providerها اختیاری) طبق پرامپت بخش ۹
 - [ ] تست A/B سه گزینه TTS بخش ۷.۱ و انتخاب نهایی
 - [ ] Admin Dashboard حداقلی برای مدیریت وضعیت خط تولید کتاب‌ها
 - [ ] مهاجرت از Static Export به Vercel/Next.js با API Routes پویا

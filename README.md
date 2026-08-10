@@ -12,7 +12,7 @@
 - 🌙 تم تاریک مدرن با لهجه بنفش
 - 🇮🇷 فارسی و راست‌چین (RTL) با فونت وزیرمتن
 - ⚡ Static Site Generation با Next.js
-- 🤖 معماری آماده برای AI Pipeline و TTS
+- 🤖 Online Content Factory رایگان‌محور روی GitHub Actions (research → script → TTS → QA → R2)
 
 ## 🛠️ Tech Stack
 
@@ -57,7 +57,7 @@ MIT
 
 **فاز جاری:** `v0.2.0 — Audio واقعی`
 
-وضعیت v0.2.0-alpha.2: پلیر و قرارداد Audio/CDN آماده‌اند و ابزار اعتبارسنجی MP3 + آپلود R2 با SHA-256 round-trip اضافه شده است؛ SoundHelix همچنان placeholder می‌ماند تا فایل‌های production واقعی تولید و verify شوند.
+وضعیت v0.2.0-alpha.3: کارخانه آنلاین محتوا روی GitHub Actions آماده است: research قانونی/grounded، اسکریپت مستقل فارسی، Piper TTS، FFmpeg، faster-whisper QA و R2 publication orchestration. SoundHelix فقط پس از اجرای واقعی publish و SHA-256 round-trip موفق حذف می‌شود.
 
 ### GitHub lifecycle
 
