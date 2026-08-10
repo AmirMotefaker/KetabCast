@@ -1,4 +1,3 @@
-
 import { books } from '@/lib/books';
 import { episodes } from '@/lib/episodes';
 import AudioPlayer from '@/components/AudioPlayer';
@@ -8,10 +7,15 @@ export async function generateStaticParams() {
   return books.map((book) => ({ slug: book.slug }));
 }
 
-export default function BookPage({ params }: { params: { slug: string } }) {
-  const book = books.find(b => b.slug === params.slug);
+export default async function BookPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const book = books.find((b) => b.slug === slug);
   if (!book) return notFound();
-  const episode = episodes.find(ep => ep.bookSlug === book.slug);
+  const episode = episodes.find((ep) => ep.bookSlug === book.slug);
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12">
@@ -40,7 +44,7 @@ export default function BookPage({ params }: { params: { slug: string } }) {
         <ul className="space-y-4">
           {book.keyIdeas.map((idea: string, i: number) => (
             <li key={i} className="bg-surface/50 p-5 rounded-xl border border-gray-800 flex gap-4 items-start">
-              <span className="bg-accent text-white w-8 h-8 rounded-full flex items-center justify-center font-bold shrink-0">#{i+1}</span>
+              <span className="bg-accent text-white w-8 h-8 rounded-full flex items-center justify-center font-bold shrink-0">#{i + 1}</span>
               <span className="text-gray-200 text-lg">{idea}</span>
             </li>
           ))}
