@@ -315,6 +315,7 @@ Next.js App Router, TS, Tailwind v4, تم تاریک/بنفش, RTL/وزیرمت�
 - [x] Workers AI Structured JSON Mode + bounded retry + legal metadata source accounting (v0.2.0-alpha.5)
 - [x] bounded long-form Persian generation: plan + opening + 5 ideas + conclusion + word-range QA (v0.2.0-alpha.6)
 - [x] near-boundary section tolerance after strict retries + hard global transcript QA (v0.2.0-alpha.7)
+- [x] GitHub Actions hidden factory-artifact transport + credential-leak guard (v0.2.0-alpha.8)
 - [ ] یکپارچه‌سازی پلیر با فایل صوتی واقعی + verified GitHub Release Asset URL (R2 اختیاری برای آینده)
 - [x] Progress/Seek، سرعت پخش، loading/error state و a11y پلیر (`v0.2.0-alpha.1`)
 - [ ] دانلود/آفلاین واقعی پس از ingest فایل‌های production

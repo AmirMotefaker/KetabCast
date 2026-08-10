@@ -57,7 +57,7 @@ MIT
 
 **فاز جاری:** `v0.2.0 — Audio واقعی`
 
-وضعیت v0.2.0-alpha.7: سه تلاش section همچنان strict هستند؛ پس از exhaustion فقط draft نزدیک به مرز با tolerance حداکثر ۲۰ کلمه پذیرفته می‌شود و gate نهایی ۱۵۰۰–۲۵۰۰ کلمه سخت باقی می‌ماند.
+وضعیت v0.2.0-alpha.8: انتقال artifactهای hidden کارخانه در GitHub Actions اصلاح شده است؛ `.factory-output` با `include-hidden-files` آپلود می‌شود و قبل از upload یک guard برای فایل‌های secret-like و نشت credential اجرا می‌شود.
 
 ### GitHub lifecycle
 
