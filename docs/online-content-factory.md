@@ -2,134 +2,111 @@
 
 ## Purpose
 
-The Online Content Factory turns the current static v0.2 application into an
-online, repeatable content-production system without introducing a backend.
-It runs on GitHub Actions and preserves static export.
+The Online Content Factory turns the static v0.2 application into an online,
+repeatable content-production system while preserving static export.
+
+The factory runs on GitHub Actions.
 
 ## Current books
 
-The first production run targets only the two books already present:
+Only the two books already present in KetabCast are targeted:
 
 - Atomic Habits — James Clear
 - Deep Work — Cal Newport
 
-No third, fourth or fifth book is fabricated by the automation.
+No third, fourth or fifth book is invented by the automation.
 
 ## Legal research policy
 
-For copyrighted books, the factory is `web-research-only`.
+For copyrighted books, the factory uses `web-research-only`.
 
-Allowed inputs include official author/publisher pages, legal Google Books
-metadata/previews, Open Library metadata, author interviews/talks/articles,
-reputable secondary reviews, and Google Search grounding.
+Allowed inputs include:
+
+- official author and publisher pages
+- legal Google Books metadata/previews
+- Open Library metadata
+- author interviews, talks and articles
+- reputable secondary reviews
+- Google Search grounding when Gemini is available
 
 The factory must not search for or consume pirate PDFs, leaked ebooks,
-unauthorized full-text mirrors, chapter dumps, or wholesale copyrighted text.
+unauthorized full-text mirrors, chapter dumps or wholesale copyrighted text.
 
 ## Free-first provider strategy
 
-Primary:
-- Gemini API free tier
-- Gemini Google Search grounding
-- Gemini 2.5 Flash-Lite for research
+Primary research/writing:
+
+- Gemini API free tier when configured
+- Gemini Google Search grounding for research
+- Gemini 2.5 Flash-Lite for grounded research
 - Gemini 2.5 Flash for Persian script generation
 
 Fallback:
+
 - Cloudflare Workers AI
 - `@cf/meta/llama-3.3-70b-instruct-fp8-fast`
 
 The fallback receives the legal source pack and does not pretend to have
 Google Search grounding.
 
-## Source pack
+## Audio
 
-Before LLM research the factory collects:
-- Google Books public metadata
-- Open Library public metadata
-- explicitly configured official author pages
+Primary free TTS:
 
-A single provider failure does not invalidate the remaining source pack.
+- Piper `fa_IR-amir-medium`
 
-## Script contract
+Audio QA:
 
-The Persian output is an original summary/analysis, not a translation.
-The prompt targets 1,800–2,200 Persian words, 4–6 key ideas, a strong opening,
-transitions, conclusion, and a practical action. It prohibits URLs, production
-notes, unsupported claims, and close reproduction of copyrighted prose.
+1. Piper creates WAV.
+2. FFmpeg loudness-normalizes and creates MP3.
+3. faster-whisper transcribes the generated MP3.
+4. `audio-qa.py` compares STT with the source script.
+5. `audio:inspect` records duration, bytes and SHA-256.
 
-Deterministic QA uses a wider 1,500–2,500 word safety range.
+## Production storage: GitHub Release Assets
 
-## TTS and audio QA
+R2 is not required.
 
-Primary free TTS is Piper with `fa_IR-amir-medium`.
+For a publish run:
 
-The voice model repository reports MIT metadata and the model card reports a
-CC0 source dataset. Piper itself is GPL-3.0-or-later and is executed as external
-runner tooling; it is not bundled into the web application.
+1. create/reuse immutable `media-<release_tag>`
+2. upload verified MP3 assets to the GitHub media release
+3. compare GitHub API size/digest with local inspection
+4. download every `browser_download_url`
+5. recompute download-back SHA-256
+6. write `github-release-assets.json`
+7. promote only verified episodes from `placeholder` to `ready`
+8. set explicit `publicUrl`
+9. remove SoundHelix `previewUrl`
+10. create generated publication PR
+11. dispatch CI, merge, post-merge CI and Pages
+12. create the exact-SHA code tag and GitHub prerelease
 
-Audio flow:
-1. Piper -> WAV
-2. FFmpeg loudness normalization -> 96 kbps mono MP3
-3. faster-whisper transcribes the MP3 in Persian
-4. `audio-qa.py` compares STT with the source script
-5. `audio:inspect` records duration, bytes, codec and SHA-256
-6. only passing assets are publishable
+The exact code release also attaches the generated MP3 files for discoverability.
 
-## R2 publication truth gate
+## Why not GitHub Pages for MP3 storage?
 
-On `stage=publish`:
-1. the existing R2 uploader re-hashes the local MP3
-2. Wrangler uploads with explicit `--remote`
-3. the object is downloaded back
-4. byte size and SHA-256 are compared
-5. only after round-trip PASS may `factory-promote.mjs` set `status=ready`
-6. `previewUrl` is removed only for successfully promoted assets
+The website remains on GitHub Pages, but MP3 binaries are release assets.
+This keeps media out of the Git repository and avoids consuming the Pages
+site-size budget.
 
-## Online GitHub lifecycle
+## Credentials
 
-The publish job:
-1. creates a generated branch
-2. commits production metadata and sanitized evidence
-3. creates a PR tracking Issue #8
-4. explicitly dispatches CI for the branch
-5. publishes a successful commit status and PR evidence comment
-6. squash-merges with an exact-head guard
-7. explicitly dispatches post-merge CI and Pages
-8. creates an annotated exact-SHA tag
-9. creates a GitHub prerelease
-10. comments Issue #8
+Storage requires no additional secret: the workflow uses its scoped
+`GITHUB_TOKEN`.
 
-Explicit workflow dispatch is used because workflow-token events do not reliably
-recurse into additional workflow runs.
+For AI generation, configure either:
 
-## One-time configuration
+- `GEMINI_API_KEY`
 
-Required secrets:
-- `GEMINI_API_KEY` (primary generation path)
+or both:
+
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 
-Optional secret:
-- `GOOGLE_BOOKS_API_KEY` (public metadata identification/quota)
+Optional:
 
-Repository variables:
-- `R2_BUCKET_NAME`
-- `NEXT_PUBLIC_AUDIO_BASE_URL`
-
-Optional variables:
-- `GEMINI_RESEARCH_MODEL`
-- `GEMINI_SCRIPT_MODEL`
-- `CLOUDFLARE_AI_MODEL`
 - `GOOGLE_BOOKS_API_KEY`
 
-No secret belongs in Git, evidence, artifacts, PR bodies or release notes.
-
-## Dispatch stages
-
-- `research`: source pack + grounded research artifact
-- `script`: research + Persian script + content QA
-- `audio`: script + Piper + FFmpeg + faster-whisper + SHA inspection
-- `publish`: all stages + R2 + promotion + PR + CI + merge + tag + release
-
-The first real publish of both current books should use `slug=all` and a new
-exact release tag such as `v0.2.0-beta.1`.
+No secret value belongs in Git, evidence, artifacts, PR bodies or release
+notes.

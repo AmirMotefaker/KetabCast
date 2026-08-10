@@ -311,6 +311,7 @@ Next.js App Router, TS, Tailwind v4, تم تاریک/بنفش, RTL/وزیرمت�
 - [x] قرارداد Audio metadata + URL strategy آماده CDN/R2 (`v0.2.0-alpha.1`)
 - [x] ابزار اعتبارسنجی/ingest صوت و guard کاراکترهای کنترلی (v0.2.0-alpha.2)
 - [x] کارخانه آنلاین محتوای free-first: legal web research → Persian script → Piper TTS → Whisper QA → R2 orchestration (`v0.2.0-alpha.3`)
+- [x] storage رایگان production با GitHub Release Assets و download-back SHA-256 gate (v0.2.0-alpha.4)
 - [ ] یکپارچه‌سازی پلیر با فایل صوتی واقعی + CDN (Cloudflare R2)
 - [x] Progress/Seek، سرعت پخش، loading/error state و a11y پلیر (`v0.2.0-alpha.1`)
 - [ ] دانلود/آفلاین واقعی پس از ingest فایل‌های production

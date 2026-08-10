@@ -24,6 +24,17 @@ const inspection = JSON.parse(
     "utf8",
   ),
 );
+const releaseMap = JSON.parse(
+  await readFile(
+    resolve(args.assets ?? ".factory-output/github-release-assets.json"),
+    "utf8",
+  ),
+);
+
+if (releaseMap.provider !== "github-release-assets") {
+  throw new Error(`Unsupported production audio provider: ${releaseMap.provider}`);
+}
+
 const episodesPath = "src/content/episodes.json";
 const episodes = JSON.parse(await readFile(episodesPath, "utf8"));
 const catalog = JSON.parse(
@@ -42,12 +53,43 @@ for (const slug of slugs) {
   const generated = JSON.parse(
     await readFile(join(outRoot, slug, "episode.json"), "utf8"),
   );
+
   const inspected = inspection.assets.find(
     (asset) => asset.episodeId === book.episodeId,
   );
-  if (!inspected) throw new Error(`No inspected asset for ${book.episodeId}`);
+  if (!inspected) {
+    throw new Error(`No inspected asset for ${book.episodeId}`);
+  }
 
-  const index = episodes.findIndex((episode) => episode.id === book.episodeId);
+  const remote = releaseMap.assets.find(
+    (asset) => asset.episodeId === book.episodeId,
+  );
+  if (!remote) {
+    throw new Error(`No GitHub release asset for ${book.episodeId}`);
+  }
+
+  if (!remote.verified) {
+    throw new Error(`Remote integrity is not verified: ${book.episodeId}`);
+  }
+
+  if (remote.objectKey !== inspected.objectKey) {
+    throw new Error(`objectKey mismatch for ${book.episodeId}`);
+  }
+
+  if (
+    remote.sha256 !== inspected.sha256 ||
+    Number(remote.bytes) !== Number(inspected.bytes)
+  ) {
+    throw new Error(`Remote/local integrity mismatch for ${book.episodeId}`);
+  }
+
+  if (!/^https:\/\/github\.com\//u.test(remote.publicUrl)) {
+    throw new Error(`Unexpected GitHub asset URL: ${remote.publicUrl}`);
+  }
+
+  const index = episodes.findIndex(
+    (episode) => episode.id === book.episodeId,
+  );
   if (index < 0) throw new Error(`Episode not found: ${book.episodeId}`);
 
   episodes[index] = {
@@ -60,6 +102,7 @@ for (const slug of slugs) {
     audio: {
       status: "ready",
       objectKey: inspected.objectKey,
+      publicUrl: remote.publicUrl,
       mimeType: "audio/mpeg",
       durationSeconds: inspected.durationSeconds,
       downloadable: false,
@@ -70,6 +113,7 @@ for (const slug of slugs) {
 
   const evidenceDir = resolve("content/evidence", slug);
   await mkdir(evidenceDir, { recursive: true });
+
   for (const file of [
     "research.md",
     "sources.json",
@@ -79,6 +123,12 @@ for (const slug of slugs) {
   ]) {
     await cp(join(outRoot, slug, file), join(evidenceDir, file));
   }
+
+  await writeFile(
+    join(evidenceDir, "production-audio.json"),
+    `${JSON.stringify(remote, null, 2)}\n`,
+    "utf8",
+  );
 }
 
 await writeFile(
@@ -87,4 +137,6 @@ await writeFile(
   "utf8",
 );
 
-console.log(`Promoted ${slugs.length} production episode(s).`);
+console.log(
+  `Promoted ${slugs.length} GitHub Release-backed production episode(s).`,
+);
