@@ -3,7 +3,17 @@
 import { useState, useRef } from 'react';
 import { Play, Pause, SkipBack, SkipForward } from 'lucide-react';
 
-export default function AudioPlayer({ episode }: any) {
+interface AudioPlayerEpisode {
+  audioUrl: string;
+  title: string;
+  durationSeconds: number;
+}
+
+interface AudioPlayerProps {
+  episode: AudioPlayerEpisode;
+}
+
+export default function AudioPlayer({ episode }: AudioPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 

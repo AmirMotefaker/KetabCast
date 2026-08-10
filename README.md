@@ -48,3 +48,23 @@ npm run build
 ## 📄 License
 
 MIT
+
+<!-- BEGIN:ketabcast-governance -->
+
+## 📚 سند مرجع و وضعیت توسعه
+
+سند اصلی محصول و مهندسی پروژه در [`KETABCAST_MASTER_DOC.md`](./KETABCAST_MASTER_DOC.md) نگهداری می‌شود. هر توسعه‌دهنده یا AI Agent باید پیش از تغییرات معنادار، بخش «۰. خلاصه اجرایی» و «۱۳. نقشه‌راه دقیق» آن را بخواند.
+
+**فاز جاری:** `v0.2.0 — Audio واقعی`
+
+وضعیت واقعی پلیر در پایان v0.1.x: Play/Pause و اسکیپ ±۱۵ ثانیه پیاده شده است؛ Progress/Seek، سرعت پخش، دانلود/آفلاین و اتصال به محتوای صوتی واقعی جزو کارهای v0.2 هستند.
+
+### GitHub lifecycle
+
+تمام milestoneهای معنادار با این چرخه منتشر می‌شوند:
+
+`Issue → Branch → Commit → Pull Request → Checks/Evidence → Merge → Exact-SHA Tag → GitHub Release`
+
+جزئیات قواعد Agent در [`AGENTS.md`](./AGENTS.md) قرار دارد.
+
+<!-- END:ketabcast-governance -->
