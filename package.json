@@ -1,13 +1,16 @@
 {
   "name": "ketabcast",
-  "version": "0.2.0-alpha.1",
+  "version": "0.2.0-alpha.2",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:text": "node scripts/check-text-controls.mjs",
+    "audio:inspect": "node scripts/audio-inspect.mjs",
+    "audio:upload": "node scripts/audio-upload.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -23,7 +26,9 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
+    "music-metadata": "11.14.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "4.120.0"
   }
 }

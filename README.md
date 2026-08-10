@@ -57,7 +57,7 @@ MIT
 
 **فاز جاری:** `v0.2.0 — Audio واقعی`
 
-وضعیت v0.2.0-alpha.1: پلیر دارای Progress/Seek، سرعت پخش، مدیریت loading/error و کنترل‌های دسترس‌پذیر است؛ قرارداد Audio/CDN نیز آماده شده، اما فایل‌های SoundHelix هنوز فقط placeholder هستند و جایگزینی با صوت production + R2 و دانلود/آفلاین در milestone بعدی انجام می‌شود.
+وضعیت v0.2.0-alpha.2: پلیر و قرارداد Audio/CDN آماده‌اند و ابزار اعتبارسنجی MP3 + آپلود R2 با SHA-256 round-trip اضافه شده است؛ SoundHelix همچنان placeholder می‌ماند تا فایل‌های production واقعی تولید و verify شوند.
 
 ### GitHub lifecycle
 

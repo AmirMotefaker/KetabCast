@@ -308,9 +308,10 @@ Next.js App Router, TS, Tailwind v4, تم تاریک/بنفش, RTL/وزیرمت�
 
 ### 🔨 v0.2.0 — Audio واقعی (فاز بعدی، اولویت الان)
 - [ ] ضبط/تولید ۵ اپیزود واقعی (صدای انسانی یا TTS باکیفیت) به‌عنوان MVP محتوایی
-- [x] قرارداد Audio metadata + URL strategy آماده CDN/R2 (0.2.0-alpha.1)
+- [x] قرارداد Audio metadata + URL strategy آماده CDN/R2 (`v0.2.0-alpha.1`)
+- [x] ابزار اعتبارسنجی/ingest صوت و guard کاراکترهای کنترلی (v0.2.0-alpha.2)
 - [ ] یکپارچه‌سازی پلیر با فایل صوتی واقعی + CDN (Cloudflare R2)
-- [x] Progress/Seek، سرعت پخش، loading/error state و a11y پلیر (0.2.0-alpha.1)
+- [x] Progress/Seek، سرعت پخش، loading/error state و a11y پلیر (`v0.2.0-alpha.1`)
 - [ ] دانلود/آفلاین واقعی پس از ingest فایل‌های production
 - [ ] صفحه ترنسکریپت هم‌گام با پخش صدا (Karaoke-style highlight، اختیاری)
 - [ ] تست کیفیت روی موبایل واقعی (اینترنت ایران، اندروید رایج)
