@@ -1,20 +1,19 @@
-import Link from "next/link";
-import { Book } from "@/types";
-import { Clock } from "lucide-react";
 
-export const BookCard = ({ book }: { book: Book }) => {
-  const m = Math.floor(book.episode.durationSeconds / 60);
+import Link from 'next/link';
+
+export default function BookCard({ book }: any) {
   return (
-    <Link href={('/books/' + book.slug)} className="group glass rounded-2xl overflow-hidden hover:border-violet-500/50 transition-all duration-300">
-      <div className="aspect-[3/4] bg-gradient-to-br from-gray-800 to-gray-900 relative overflow-hidden flex items-center justify-center">
-        <span className="text-7xl font-bold text-gray-700 opacity-50">{book.titleEn.charAt(0)}</span>
+    <Link href={`/books/${book.slug}`} className="bg-surface/50 p-4 rounded-2xl border border-gray-800 hover:border-accent transition-all hover:scale-[1.02] block group">
+      <div className="aspect-[3/4] w-full overflow-hidden rounded-xl mb-4 bg-gray-800">
+        <img src={book.coverUrl} alt={book.titleFa} className="w-full h-full object-cover group-hover:opacity-90 transition" />
       </div>
-      <div className="p-5">
-        <span className="text-xs text-violet-400 font-medium">{book.category}</span>
-        <h3 className="text-lg font-bold text-white mt-2 group-hover:text-violet-300 transition-colors">{book.titleFa}</h3>
-        <p className="text-sm text-gray-400 mt-1">{book.authorFa}</p>
-        <div className="flex items-center gap-2 mt-4 text-xs text-gray-500"><Clock size={14} /><span>{m} دقیقه</span></div>
+      <span className="text-xs text-accent font-bold uppercase tracking-wider">{book.category}</span>
+      <h3 className="text-xl font-bold mt-2 group-hover:text-accent transition">{book.titleFa}</h3>
+      <p className="text-sm text-gray-400 mb-4">{book.authorFa}</p>
+      <div className="flex justify-between items-center pt-4 border-t border-gray-700 text-sm">
+        <span className="text-gray-500 flex items-center gap-1">🎧 ۱۴ دقیقه</span>
+        <span className="text-accent font-semibold">▶ گوش دادن</span>
       </div>
     </Link>
   );
-};
+}

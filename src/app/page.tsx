@@ -1,28 +1,22 @@
-import { books } from "@/content/books";
-import { BookCard } from "@/components/BookCard";
-import { Hero } from "@/components/Hero";
-import { Sparkles } from "lucide-react";
-import { GithubIcon } from "@/components/Icons";
+
+import Hero from '@/components/Hero';
+import { books } from '@/lib/books';
+import BookCard from '@/components/BookCard';
 
 export default function Home() {
   return (
-    <div className="space-y-24">
+    <div>
       <Hero />
-      <section id="episodes">
-        <div className="flex items-center gap-3 mb-8">
-          <Sparkles className="text-violet-400" /><h2 className="text-2xl font-bold text-white">تازه منتشر شده</h2>
+      <section className="max-w-6xl mx-auto px-4 py-16">
+        <div className="flex justify-between items-end mb-10">
+          <h2 className="text-3xl font-bold">آخرین اپیزودها</h2>
+          <a href="/books" className="text-accent hover:underline text-sm font-semibold">مشاهده همه ←</a>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {books.map(book => <BookCard key={book.slug} book={book} />)}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+          {books.map((book: any) => (
+            <BookCard key={book.slug} book={book} />
+          ))}
         </div>
-      </section>
-      <section id="about" className="text-center py-12 glass rounded-3xl">
-        <GithubIcon size={40} className="mx-auto mb-4 text-violet-400" />
-        <h2 className="text-2xl font-bold mb-4 text-white">پروژه متن‌باز (Open Source)</h2>
-        <p className="text-gray-400 mb-8 max-w-xl mx-auto">کتاب‌کست یک محصول متن‌باز است. اگر به توسعه آن علاقه‌مندید، در گیت‌هاب به ما بپیوندید.</p>
-        <a href="https://github.com/AmirMotefaker/KetabCast" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 bg-violet-500 hover:bg-violet-600 text-white px-6 py-3 rounded-xl font-bold transition-colors">
-          مشاهده در گیت‌هاب
-        </a>
       </section>
     </div>
   );

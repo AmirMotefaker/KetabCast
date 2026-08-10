@@ -1,25 +1,16 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
 
-:root {
-  --background: 10 10% 5%; 
-  --surface: 15 15% 10%; 
-  --accent: 265 89% 78%; 
-  --text: 0 0% 98%; 
+@theme {
+  --color-background: #0a0a0a;
+  --color-surface: #1f2937;
+  --color-accent: #8b5cf6;
+  --font-sans: "Vazirmatn", sans-serif;
 }
-
-* { -webkit-tap-highlight-color: transparent; }
 
 body {
-  background-color: hsl(var(--background));
-  color: hsl(var(--text));
-  font-family: 'Vazirmatn', system-ui, sans-serif;
+  font-family: var(--font-sans);
+  background-color: var(--color-background);
+  color: #f3f4f6;
+  direction: rtl;
 }
-
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: hsl(var(--background)); }
-::-webkit-scrollbar-thumb { background: hsl(var(--surface)); border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: hsl(var(--accent)); }
-
-.glass { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.05); }
