@@ -1,7 +1,19 @@
 
 import Link from 'next/link';
 
-export default function BookCard({ book }: any) {
+interface BookCardBook {
+  slug: string;
+  titleFa: string;
+  authorFa: string;
+  category: string;
+  coverUrl: string;
+}
+
+interface BookCardProps {
+  book: BookCardBook;
+}
+
+export default function BookCard({ book }: BookCardProps) {
   return (
     <Link href={`/books/${book.slug}`} className="bg-surface/50 p-4 rounded-2xl border border-gray-800 hover:border-accent transition-all hover:scale-[1.02] block group">
       <div className="aspect-[3/4] w-full overflow-hidden rounded-xl mb-4 bg-gray-800">
