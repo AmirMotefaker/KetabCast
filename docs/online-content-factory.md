@@ -158,3 +158,21 @@ Artifacts record `acceptance`, `attempts`, `selectedAttempt`, `strictRange`,
 
 This mechanism never relaxes episode length: the assembled transcript must
 still pass the hard 1,500–2,500 Persian word gate before audio generation.
+## GitHub Actions artifact transport
+
+The factory intentionally keeps transient generation files under the local
+`.factory-output` workspace.
+
+`actions/upload-artifact` excludes hidden files and folders by default. Because
+the factory output root begins with `.`, both evidence uploads explicitly use
+`include-hidden-files: true`.
+
+Before either upload, the workflow runs a safety guard that:
+
+- rejects `.env`, private-key, credential and secret-like filenames
+- scans generated JSON/Markdown/text files for configured provider/API token
+  values without printing those values
+- keeps `if-no-files-found: error` so artifact loss remains a hard failure
+
+This setting affects Actions QA artifacts only. It does not publish production
+audio or change episode readiness.
