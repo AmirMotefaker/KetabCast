@@ -313,6 +313,7 @@ Next.js App Router, TS, Tailwind v4, تم تاریک/بنفش, RTL/وزیرمت�
 - [x] کارخانه آنلاین محتوای free-first: legal web research → Persian script → Piper TTS → Whisper QA → R2 orchestration (`v0.2.0-alpha.3`)
 - [x] storage رایگان production با GitHub Release Assets و download-back SHA-256 gate (v0.2.0-alpha.4)
 - [x] Workers AI Structured JSON Mode + bounded retry + legal metadata source accounting (v0.2.0-alpha.5)
+- [x] bounded long-form Persian generation: plan + opening + 5 ideas + conclusion + word-range QA (v0.2.0-alpha.6)
 - [ ] یکپارچه‌سازی پلیر با فایل صوتی واقعی + CDN (Cloudflare R2)
 - [x] Progress/Seek، سرعت پخش، loading/error state و a11y پلیر (`v0.2.0-alpha.1`)
 - [ ] دانلود/آفلاین واقعی پس از ingest فایل‌های production

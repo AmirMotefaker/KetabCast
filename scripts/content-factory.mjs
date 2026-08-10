@@ -276,12 +276,11 @@ const episodeSchema = {
   ],
 };
 
-const cloudflareEpisodeSchema = {
+const cloudflareEpisodePlanSchema = {
   type: "object",
   properties: {
     title: { type: "string" },
     description: { type: "string" },
-    transcript: { type: "string" },
     keyIdeas: {
       type: "array",
       items: { type: "string" },
@@ -291,7 +290,6 @@ const cloudflareEpisodeSchema = {
   required: [
     "title",
     "description",
-    "transcript",
     "keyIdeas",
     "actionToday",
   ],
@@ -370,6 +368,328 @@ function assertEpisodeEnvelope(value) {
   }
 
   return value;
+}
+
+function assertEpisodePlan(value) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    typeof value.title !== "string" ||
+    typeof value.description !== "string" ||
+    !Array.isArray(value.keyIdeas) ||
+    value.keyIdeas.length !== 5 ||
+    value.keyIdeas.some(
+      (idea) => typeof idea !== "string" || !idea.trim(),
+    ) ||
+    typeof value.actionToday !== "string"
+  ) {
+    throw new Error(
+      "Episode plan must contain title, description, actionToday and " +
+        "exactly five non-empty keyIdeas.",
+    );
+  }
+
+  return value;
+}
+
+function normalizeSpokenSection(text) {
+  return text
+    .replace(/^```(?:text|markdown|persian)?\s*/iu, "")
+    .replace(/\s*```$/u, "")
+    .trim();
+}
+
+function longformPlanPrompt(book, research) {
+  return `
+You are planning an ORIGINAL Persian KetabCast podcast episode.
+
+BOOK
+${book.titleFa} (${book.title}) — ${book.authorFa} (${book.author})
+
+Create only the compact editorial plan, not the long transcript.
+
+REQUIREMENTS
+- title: concise Persian episode title
+- description: 1–2 concise Persian sentences
+- keyIdeas: EXACTLY five concise Persian core ideas
+- actionToday: one practical Persian action for the listener
+- use only claims supported by the research dossier
+- do not translate chapter-by-chapter
+- do not reproduce or closely paraphrase copyrighted prose
+- do not include URLs or citations in these fields
+
+RESEARCH DOSSIER
+${research}
+`.trim();
+}
+
+async function generateLongformSection({
+  book,
+  research,
+  plan,
+  label,
+  focus,
+  targetRange,
+  minWords,
+  maxWords,
+}) {
+  let previousDraft = "";
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const repairInstruction =
+      attempt === 1
+        ? ""
+        : `
+The previous draft was ${countWords(previousDraft)} Persian words.
+Rewrite it completely so it lands inside the required acceptance range of
+${minWords}–${maxWords} Persian words. Keep the same factual scope, improve
+flow, and do not pad with repetition.
+
+PREVIOUS DRAFT
+${previousDraft}
+`;
+
+    const prompt = `
+You are writing ONE spoken section of an original Persian KetabCast episode.
+
+BOOK
+${book.titleFa} (${book.title}) — ${book.authorFa} (${book.author})
+
+EPISODE PLAN
+Title: ${plan.title}
+Five key ideas:
+${plan.keyIdeas.map((idea, index) => `${index + 1}. ${idea}`).join("\n")}
+Action today: ${plan.actionToday}
+
+SECTION
+${label}
+
+SECTION FOCUS
+${focus}
+
+HARD WRITING RULES
+- Output spoken Persian prose only: no heading, bullets, JSON, Markdown fence,
+  citations, URLs, source names or production notes.
+- Write native, conversational and polished Persian suitable for narration.
+- Target ${targetRange} Persian words.
+- The automated acceptance range is ${minWords}–${maxWords} Persian words.
+- Stay grounded in the dossier below.
+- Do not invent claims.
+- Do not quote the book or reproduce/closely paraphrase copyrighted prose.
+- Do not retell chapters in order.
+- Avoid repeating material that belongs to the other key ideas.
+- Use concrete explanation/example/application in your own words.
+${repairInstruction}
+
+RESEARCH DOSSIER
+${research}
+`.trim();
+
+    const generated = await cloudflareGenerate(prompt, {
+      temperature: 0.3,
+    });
+
+    if (typeof generated !== "string") {
+      throw new Error(
+        `Long-form section ${label} returned non-text output.`,
+      );
+    }
+
+    const draft = normalizeSpokenSection(generated);
+    const words = countWords(draft);
+
+    console.log(
+      `Long-form section ${label}: ${words} Persian words ` +
+        `(attempt ${attempt}/3)`,
+    );
+
+    if (words >= minWords && words <= maxWords) {
+      return {
+        text: draft,
+        wordCount: words,
+        attempts: attempt,
+      };
+    }
+
+    previousDraft = draft;
+
+    if (attempt < 3) {
+      await sleep(1000 * attempt);
+    }
+  }
+
+  throw new Error(
+    `Long-form section ${label} could not satisfy ` +
+      `${minWords}–${maxWords} Persian words after 3 attempts.`,
+  );
+}
+
+async function writeCloudflareLongformEpisode(book, research) {
+  const planPrompt = longformPlanPrompt(book, research);
+  const planAttempts = [
+    {
+      name: "plan-json-schema-primary",
+      responseFormat: {
+        type: "json_schema",
+        json_schema: cloudflareEpisodePlanSchema,
+      },
+    },
+    {
+      name: "plan-json-schema-retry",
+      responseFormat: {
+        type: "json_schema",
+        json_schema: cloudflareEpisodePlanSchema,
+      },
+    },
+    {
+      name: "plan-json-object-fallback",
+      responseFormat: {
+        type: "json_object",
+      },
+    },
+  ];
+
+  let plan = null;
+  let planMode = null;
+  const planErrors = [];
+
+  for (let index = 0; index < planAttempts.length; index += 1) {
+    const attempt = planAttempts[index];
+    const attemptPrompt =
+      attempt.name === "plan-json-object-fallback"
+        ? `${planPrompt}\n\nReturn one JSON object only. ` +
+          "keyIdeas must contain exactly five strings. Schema:\n" +
+          JSON.stringify(cloudflareEpisodePlanSchema)
+        : planPrompt;
+
+    try {
+      const response = await cloudflareGenerate(attemptPrompt, {
+        responseFormat: attempt.responseFormat,
+        temperature: 0.1,
+      });
+
+      plan = assertEpisodePlan(coerceJsonObject(response));
+      planMode = attempt.name;
+      break;
+    } catch (error) {
+      const message = String(error?.message ?? error);
+      planErrors.push(`${attempt.name}: ${message}`);
+      console.warn(
+        `Workers AI episode-plan attempt ${index + 1}/` +
+          `${planAttempts.length} failed (${attempt.name}): ${message}`,
+      );
+
+      if (index < planAttempts.length - 1) {
+        await sleep(1000 * (index + 1));
+      }
+    }
+  }
+
+  if (!plan) {
+    throw new Error(
+      "Workers AI episode plan failed after all attempts: " +
+        planErrors.join(" | "),
+    );
+  }
+
+  const sections = [];
+
+  sections.push({
+    label: "opening",
+    keyIdea: null,
+    ...(await generateLongformSection({
+      book,
+      research,
+      plan,
+      label: "Opening / hook",
+      focus:
+        "Open with the listener's real-world problem, introduce the book and " +
+        "author naturally, establish why the topic matters, and preview the " +
+        "journey without explaining the five ideas yet.",
+      targetRange: "190–220",
+      minWords: 160,
+      maxWords: 260,
+    })),
+  });
+
+  for (let index = 0; index < plan.keyIdeas.length; index += 1) {
+    const keyIdea = plan.keyIdeas[index];
+
+    sections.push({
+      label: `idea-${index + 1}`,
+      keyIdea,
+      ...(await generateLongformSection({
+        book,
+        research,
+        plan,
+        label: `Core idea ${index + 1} of 5`,
+        focus:
+          `Explain this idea deeply: "${keyIdea}". ` +
+          "Give a clear practical interpretation and one concrete example or " +
+          "application. Focus on this idea instead of summarizing the others.",
+        targetRange: "290–330",
+        minWords: 260,
+        maxWords: 360,
+      })),
+    });
+  }
+
+  sections.push({
+    label: "closing",
+    keyIdea: null,
+    ...(await generateLongformSection({
+      book,
+      research,
+      plan,
+      label: "Conclusion / action today",
+      focus:
+        "Connect the five ideas without re-explaining them, give the listener " +
+        `a memorable synthesis, and end with this practical action: ` +
+        `"${plan.actionToday}". Close naturally for KetabCast.`,
+      targetRange: "220–260",
+      minWords: 180,
+      maxWords: 300,
+    })),
+  });
+
+  const transcript = sections
+    .map((section) => section.text)
+    .join("\n\n")
+    .trim();
+
+  const totalWords = countWords(transcript);
+
+  if (totalWords < 1500 || totalWords > 2500) {
+    throw new Error(
+      `Assembled long-form transcript is ${totalWords} words; ` +
+        "expected the 1500–2500 safety range.",
+    );
+  }
+
+  console.log(
+    `Assembled long-form transcript: ${totalWords} Persian words ` +
+      `across ${sections.length} sections.`,
+  );
+
+  return {
+    provider: "cloudflare-workers-ai",
+    model: CLOUDFLARE_MODEL,
+    structuredMode: `longform-sections:${planMode}`,
+    sections: sections.map((section) => ({
+      label: section.label,
+      keyIdea: section.keyIdea,
+      wordCount: section.wordCount,
+      attempts: section.attempts,
+    })),
+    value: {
+      title: plan.title,
+      description: plan.description,
+      transcript,
+      keyIdeas: plan.keyIdeas,
+      actionToday: plan.actionToday,
+    },
+  };
 }
 
 function countWords(text) {
@@ -469,13 +789,31 @@ async function writeEpisode(book, research) {
         responseSchema: episodeSchema,
       });
 
+      const value = assertEpisodeEnvelope(
+        coerceJsonObject(geminiText(response)),
+      );
+      const words = countWords(value.transcript);
+
+      if (words < 1500 || words > 2500) {
+        throw new Error(
+          `Gemini transcript length ${words} is outside 1500–2500; ` +
+            "falling back to bounded Workers AI long-form generation.",
+        );
+      }
+
       return {
         provider: "gemini",
         model: GEMINI_SCRIPT_MODEL,
         structuredMode: "gemini-response-schema",
-        value: assertEpisodeEnvelope(
-          coerceJsonObject(geminiText(response)),
-        ),
+        sections: [
+          {
+            label: "gemini-single-pass",
+            keyIdea: null,
+            wordCount: words,
+            attempts: 1,
+          },
+        ],
+        value,
       };
     } catch (error) {
       console.warn(
@@ -484,74 +822,7 @@ async function writeEpisode(book, research) {
     }
   }
 
-  const attempts = [
-    {
-      name: "json-schema-primary",
-      responseFormat: {
-        type: "json_schema",
-        json_schema: cloudflareEpisodeSchema,
-      },
-    },
-    {
-      name: "json-schema-retry",
-      responseFormat: {
-        type: "json_schema",
-        json_schema: cloudflareEpisodeSchema,
-      },
-    },
-    {
-      name: "json-object-fallback",
-      responseFormat: {
-        type: "json_object",
-      },
-    },
-  ];
-
-  const errors = [];
-
-  for (let index = 0; index < attempts.length; index += 1) {
-    const attempt = attempts[index];
-
-    const attemptPrompt =
-      attempt.name === "json-object-fallback"
-        ? `${prompt}\n\nReturn one JSON object only. It must satisfy this JSON Schema:\n` +
-          JSON.stringify(cloudflareEpisodeSchema)
-        : prompt;
-
-    try {
-      const response = await cloudflareGenerate(attemptPrompt, {
-        responseFormat: attempt.responseFormat,
-        temperature: 0.1,
-      });
-
-      const value = assertEpisodeEnvelope(
-        coerceJsonObject(response),
-      );
-
-      return {
-        provider: "cloudflare-workers-ai",
-        model: CLOUDFLARE_MODEL,
-        structuredMode: attempt.name,
-        value,
-      };
-    } catch (error) {
-      const message = String(error?.message ?? error);
-      errors.push(`${attempt.name}: ${message}`);
-      console.warn(
-        `Workers AI structured episode attempt ${index + 1}/` +
-          `${attempts.length} failed (${attempt.name}): ${message}`,
-      );
-
-      if (index < attempts.length - 1) {
-        await sleep(1000 * (index + 1));
-      }
-    }
-  }
-
-  throw new Error(
-    "Workers AI structured episode generation failed after all attempts: " +
-      errors.join(" | "),
-  );
+  return writeCloudflareLongformEpisode(book, research);
 }
 
 async function writeJson(path, value) {
@@ -653,11 +924,23 @@ async function processBook(book, stage, outRoot) {
     throw new Error(`Invalid episode JSON for ${book.slug}.`);
   }
 
+  if (Array.isArray(generated.sections)) {
+    await writeJson(join(outputDir, "script-sections.json"), {
+      schemaVersion: 1,
+      provider: generated.provider,
+      model: generated.model,
+      structuredMode: generated.structuredMode ?? null,
+      sections: generated.sections,
+    });
+  }
+
   const qa = deterministicQa(episode, uniqueSources.length);
   await writeJson(join(outputDir, "qa.json"), {
     ...qa,
     provider: generated.provider,
     model: generated.model,
+    structuredMode: generated.structuredMode ?? null,
+    generationSections: generated.sections ?? [],
     rightsMode: book.rightsMode,
   });
   if (!qa.pass) {

@@ -128,3 +128,21 @@ Successful Google Books and Open Library metadata queries are counted as legal
 source records alongside official pages and grounded-search sources. This keeps
 the source-count gate meaningful in Cloudflare-only mode without fabricating
 web-search results.
+## Bounded long-form Persian generation
+
+Long spoken transcripts are not requested as one giant structured JSON field.
+
+For the Cloudflare-only path:
+
+1. JSON Mode creates a compact episode plan with exactly five key ideas.
+2. The opening is generated as plain spoken Persian with a bounded word range.
+3. Each of the five core ideas is generated independently with its own range.
+4. The conclusion/action section is generated independently.
+5. A section outside its acceptance range is rewritten up to three times.
+6. The assembled transcript must still pass the global 1,500–2,500 word safety
+   gate before TTS.
+7. `script-sections.json` records section word counts and attempt counts.
+
+This keeps structured output focused on metadata while using ordinary text
+generation for narration. Copyright-safe source constraints apply to every
+section.
