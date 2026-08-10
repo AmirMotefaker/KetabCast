@@ -146,3 +146,15 @@ For the Cloudflare-only path:
 This keeps structured output focused on metadata while using ordinary text
 generation for narration. Copyright-safe source constraints apply to every
 section.
+## Near-boundary section tolerance
+
+The three normal section attempts keep their strict ranges unchanged. If all
+three strict attempts miss, the factory retains all candidates and selects the
+one closest to the strict-range midpoint. It may be accepted only when it is no
+more than 20 words outside that strict range.
+
+Artifacts record `acceptance`, `attempts`, `selectedAttempt`, `strictRange`,
+`softRange` and `wordCount` for each section.
+
+This mechanism never relaxes episode length: the assembled transcript must
+still pass the hard 1,500–2,500 Persian word gate before audio generation.

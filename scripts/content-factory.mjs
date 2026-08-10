@@ -435,6 +435,12 @@ async function generateLongformSection({
   maxWords,
 }) {
   let previousDraft = "";
+  const candidates = [];
+  const strictRange = `${minWords}–${maxWords}`;
+  const softMinWords = Math.max(1, minWords - 20);
+  const softMaxWords = maxWords + 20;
+  const softRange = `${softMinWords}–${softMaxWords}`;
+  const targetMidpoint = (minWords + maxWords) / 2;
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     const repairInstruction =
@@ -473,7 +479,7 @@ HARD WRITING RULES
   citations, URLs, source names or production notes.
 - Write native, conversational and polished Persian suitable for narration.
 - Target ${targetRange} Persian words.
-- The automated acceptance range is ${minWords}–${maxWords} Persian words.
+- The automated strict acceptance range is ${minWords}–${maxWords} Persian words.
 - Stay grounded in the dossier below.
 - Do not invent claims.
 - Do not quote the book or reproduce/closely paraphrase copyrighted prose.
@@ -498,6 +504,8 @@ ${research}
 
     const draft = normalizeSpokenSection(generated);
     const words = countWords(draft);
+    const candidate = { text: draft, wordCount: words, attempt };
+    candidates.push(candidate);
 
     console.log(
       `Long-form section ${label}: ${words} Persian words ` +
@@ -509,19 +517,45 @@ ${research}
         text: draft,
         wordCount: words,
         attempts: attempt,
+        selectedAttempt: attempt,
+        acceptance: "strict",
+        strictRange,
+        softRange,
       };
     }
 
     previousDraft = draft;
+    if (attempt < 3) await sleep(1000 * attempt);
+  }
 
-    if (attempt < 3) {
-      await sleep(1000 * attempt);
-    }
+  const best = [...candidates].sort((left, right) => {
+    const leftDistance = Math.abs(left.wordCount - targetMidpoint);
+    const rightDistance = Math.abs(right.wordCount - targetMidpoint);
+    if (leftDistance !== rightDistance) return leftDistance - rightDistance;
+    return right.wordCount - left.wordCount;
+  })[0];
+
+  if (best && best.wordCount >= softMinWords && best.wordCount <= softMaxWords) {
+    console.warn(
+      `Long-form section ${label}: accepting ${best.wordCount} Persian words ` +
+        `from attempt ${best.attempt} via soft boundary ${softRange} after ` +
+        `all strict attempts missed ${strictRange}. Global transcript QA ` +
+        `remains mandatory.`,
+    );
+    return {
+      text: best.text,
+      wordCount: best.wordCount,
+      attempts: 3,
+      selectedAttempt: best.attempt,
+      acceptance: "soft-boundary",
+      strictRange,
+      softRange,
+    };
   }
 
   throw new Error(
-    `Long-form section ${label} could not satisfy ` +
-      `${minWords}–${maxWords} Persian words after 3 attempts.`,
+    `Long-form section ${label} could not satisfy strict range ${strictRange}, ` +
+      `and the best candidate was outside post-retry soft boundary ${softRange}.`,
   );
 }
 
@@ -681,6 +715,10 @@ async function writeCloudflareLongformEpisode(book, research) {
       keyIdea: section.keyIdea,
       wordCount: section.wordCount,
       attempts: section.attempts,
+      selectedAttempt: section.selectedAttempt,
+      acceptance: section.acceptance,
+      strictRange: section.strictRange,
+      softRange: section.softRange,
     })),
     value: {
       title: plan.title,

@@ -57,7 +57,7 @@ MIT
 
 **فاز جاری:** `v0.2.0 — Audio واقعی`
 
-وضعیت v0.2.0-alpha.6: تولید متن بلند فارسی در Workers AI بخش‌بندی و دارای word-range gate شده است؛ JSON فقط plan/metadata را می‌سازد و متن نریشن در opening + پنج ایده + conclusion تولید و سپس assemble/QA می‌شود.
+وضعیت v0.2.0-alpha.7: سه تلاش section همچنان strict هستند؛ پس از exhaustion فقط draft نزدیک به مرز با tolerance حداکثر ۲۰ کلمه پذیرفته می‌شود و gate نهایی ۱۵۰۰–۲۵۰۰ کلمه سخت باقی می‌ماند.
 
 ### GitHub lifecycle
 
