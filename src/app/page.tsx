@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import BookCard from "@/components/BookCard";
 import Hero from "@/components/Hero";
+import DevelopmentStatus from "@/components/DevelopmentStatus";
 import ContinueListening from "@/components/player/ContinueListening";
 import { books } from "@/lib/books";
 import { episodes } from "@/lib/episodes";
@@ -37,6 +38,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <DevelopmentStatus />
 
       <ContinueListening />
 
