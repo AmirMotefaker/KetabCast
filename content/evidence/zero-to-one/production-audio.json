@@ -1,0 +1,15 @@
+{
+  "episodeId": "zero-to-one-ep1",
+  "bookSlug": "zero-to-one",
+  "objectKey": "episodes/zero-to-one/zero-to-one-ep1-v1.mp3",
+  "assetName": "zero-to-one-ep1-v1.mp3",
+  "publicUrl": "https://github.com/AmirMotefaker/KetabCast/releases/download/media-v0.2.0-beta.5/zero-to-one-ep1-v1.mp3",
+  "releaseTag": "media-v0.2.0-beta.5",
+  "releaseUrl": "https://github.com/AmirMotefaker/KetabCast/releases/tag/media-v0.2.0-beta.5",
+  "assetId": 510365400,
+  "mimeType": "audio/mpeg",
+  "bytes": 9154291,
+  "sha256": "c21c1db3fb1c9da91001db1c8b5b0e5c52509f32530cd8ce5ef897bd789d7b67",
+  "githubDigest": "sha256:c21c1db3fb1c9da91001db1c8b5b0e5c52509f32530cd8ce5ef897bd789d7b67",
+  "verified": true
+}

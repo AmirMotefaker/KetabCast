@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "provider": "gemini-source-pack",
+  "model": "gemini-3.1-flash-lite",
+  "sources": [
+    {
+      "kind": "official-seed",
+      "title": "Zero to One by Peter Thiel, Blake Masters: 9780804139298 | PenguinRandomHouse.com: Books",
+      "url": "https://www.penguinrandomhouse.com/books/234730/zero-to-one-by-peter-thiel-with-blake-masters/"
+    },
+    {
+      "kind": "official-seed",
+      "title": "Zero to One",
+      "url": "https://www.penguin.co.uk/books/419711/zero-to-one-by-masters-peter-thiel-with-blake/9780753555200"
+    }
+  ]
+}

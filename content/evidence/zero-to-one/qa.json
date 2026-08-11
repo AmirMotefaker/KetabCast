@@ -1,0 +1,104 @@
+{
+  "pass": true,
+  "wordCount": 2209,
+  "keyIdeaCount": 5,
+  "sourceCount": 2,
+  "checks": [
+    {
+      "name": "word-count",
+      "pass": true,
+      "detail": "Expected 1500–2500 safety range; got 2209."
+    },
+    {
+      "name": "key-ideas",
+      "pass": true,
+      "detail": "Expected 4–6; got 5."
+    },
+    {
+      "name": "source-count",
+      "pass": true,
+      "detail": "Expected at least 2 source records; got 2."
+    },
+    {
+      "name": "no-urls-in-transcript",
+      "pass": true,
+      "detail": "No URL found."
+    }
+  ],
+  "provider": "gemini",
+  "model": "gemini-3.1-flash-lite",
+  "structuredMode": "longform-sections:plan-json-schema-primary",
+  "generationSections": [
+    {
+      "label": "opening",
+      "keyIdea": null,
+      "wordCount": 232,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "160–260",
+      "softRange": "140–280"
+    },
+    {
+      "label": "idea-1",
+      "keyIdea": "تفاوت میان پیشرفت افقی (یک به n) و پیشرفت عمودی (صفر به یک)",
+      "wordCount": 345,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-2",
+      "keyIdea": "اهمیت اجتناب از رقابت و تبدیل شدن به یک انحصارگر در بازار هدف",
+      "wordCount": 354,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-3",
+      "keyIdea": "ضرورت تفکر انتقادی برای یافتن فرصت‌هایی که دیگران نادیده می‌گیرند",
+      "wordCount": 332,
+      "attempts": 2,
+      "selectedAttempt": 2,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-4",
+      "keyIdea": "نقش نوآوری تکنولوژیک در خروج از رکود و ساخت آینده‌ای متفاوت",
+      "wordCount": 332,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-5",
+      "keyIdea": "تأکید بر خلق ارزش جدید به جای تلاش برای تصاحب سهم از بازارهای موجود",
+      "wordCount": 341,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "closing",
+      "keyIdea": null,
+      "wordCount": 273,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "180–300",
+      "softRange": "160–320"
+    }
+  ],
+  "rightsMode": "web-research-only"
+}

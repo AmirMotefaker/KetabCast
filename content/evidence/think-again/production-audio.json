@@ -1,0 +1,15 @@
+{
+  "episodeId": "think-again-ep1",
+  "bookSlug": "think-again",
+  "objectKey": "episodes/think-again/think-again-ep1-v1.mp3",
+  "assetName": "think-again-ep1-v1.mp3",
+  "publicUrl": "https://github.com/AmirMotefaker/KetabCast/releases/download/media-v0.2.0-beta.5/think-again-ep1-v1.mp3",
+  "releaseTag": "media-v0.2.0-beta.5",
+  "releaseUrl": "https://github.com/AmirMotefaker/KetabCast/releases/tag/media-v0.2.0-beta.5",
+  "assetId": 510365385,
+  "mimeType": "audio/mpeg",
+  "bytes": 9100061,
+  "sha256": "272fbdf4b472cd7069cb0a7e29e48fbeafff52607a45b0cfd6ee7b6d5735b5bf",
+  "githubDigest": "sha256:272fbdf4b472cd7069cb0a7e29e48fbeafff52607a45b0cfd6ee7b6d5735b5bf",
+  "verified": true
+}

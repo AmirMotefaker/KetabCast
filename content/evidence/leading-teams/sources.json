@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "provider": "gemini-source-pack",
+  "model": "gemini-3.1-flash-lite",
+  "sources": [
+    {
+      "kind": "official-seed",
+      "title": "Leading Teams: Setting the Stage for Great Performances",
+      "url": "https://store.hbr.org/product/leading-teams-setting-the-stage-for-great-performances/3332"
+    },
+    {
+      "kind": "legal-metadata",
+      "title": "Open Library",
+      "url": "https://openlibrary.org/search.json?title=Leading+Teams&author=J.+Richard+Hackman&limit=5&fields=key%2Ctitle%2Cauthor_name%2Cfirst_publish_year%2Cisbn%2Cedition_count%2Cpublisher%2Clanguage"
+    }
+  ]
+}
