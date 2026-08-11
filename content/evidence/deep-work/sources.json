@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "provider": "gemini-source-pack",
+  "model": "gemini-3.1-flash-lite",
+  "sources": [
+    {
+      "kind": "official-seed",
+      "title": "Deep Work: Rules for Focused Success in a Distracted World - Cal Newport",
+      "url": "https://calnewport.com/deep-work-rules-for-focused-success-in-a-distracted-world/"
+    },
+    {
+      "kind": "legal-metadata",
+      "title": "Open Library",
+      "url": "https://openlibrary.org/search.json?title=Deep+Work&author=Cal+Newport&limit=5&fields=key%2Ctitle%2Cauthor_name%2Cfirst_publish_year%2Cisbn%2Cedition_count%2Cpublisher%2Clanguage"
+    }
+  ]
+}

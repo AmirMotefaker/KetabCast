@@ -1,0 +1,15 @@
+{
+  "episodeId": "deep-work-ep1",
+  "bookSlug": "deep-work",
+  "objectKey": "episodes/deep-work/deep-work-ep1-v1.mp3",
+  "assetName": "deep-work-ep1-v1.mp3",
+  "publicUrl": "https://github.com/AmirMotefaker/KetabCast/releases/download/media-v0.2.0-beta.1/deep-work-ep1-v1.mp3",
+  "releaseTag": "media-v0.2.0-beta.1",
+  "releaseUrl": "https://github.com/AmirMotefaker/KetabCast/releases/tag/media-v0.2.0-beta.1",
+  "assetId": 510040915,
+  "mimeType": "audio/mpeg",
+  "bytes": 9097240,
+  "sha256": "acc32b90f4684203cee7be925df1b018563d1189cd7de0e409d7fd29dceeca5a",
+  "githubDigest": "sha256:acc32b90f4684203cee7be925df1b018563d1189cd7de0e409d7fd29dceeca5a",
+  "verified": true
+}

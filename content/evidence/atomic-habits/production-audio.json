@@ -1,0 +1,15 @@
+{
+  "episodeId": "atomic-habits-ep1",
+  "bookSlug": "atomic-habits",
+  "objectKey": "episodes/atomic-habits/atomic-habits-ep1-v1.mp3",
+  "assetName": "atomic-habits-ep1-v1.mp3",
+  "publicUrl": "https://github.com/AmirMotefaker/KetabCast/releases/download/media-v0.2.0-beta.1/atomic-habits-ep1-v1.mp3",
+  "releaseTag": "media-v0.2.0-beta.1",
+  "releaseUrl": "https://github.com/AmirMotefaker/KetabCast/releases/tag/media-v0.2.0-beta.1",
+  "assetId": 510037058,
+  "mimeType": "audio/mpeg",
+  "bytes": 9002572,
+  "sha256": "d875adbb1f16429754643d45c1ecf70d0d0f3130d5121797f142e505b9d59ff0",
+  "githubDigest": "sha256:d875adbb1f16429754643d45c1ecf70d0d0f3130d5121797f142e505b9d59ff0",
+  "verified": true
+}

@@ -323,6 +323,7 @@ Next.js App Router, TS, Tailwind v4, تم تاریک/بنفش, RTL/وزیرمت�
 - [x] Human voice selection: female Sulafat/Warm + male Schedar/Even (Voice Lab run 31462344234)
 - [x] Full dual-voice pre-publication review pipeline using pinned alpha.10 scripts (v0.2.0-alpha.12)
 - [x] Gemini TTS free-tier request-budget hotfix: 8 planned / 10 hard cap (v0.2.0-alpha.12.1)
+- [x] Public beta launch with 2 exact reviewed real-audio GitHub Release Assets (v0.2.0-beta.1)
 - [ ] یکپارچه‌سازی پلیر با فایل صوتی واقعی + verified GitHub Release Asset URL (R2 اختیاری برای آینده)
 - [x] Progress/Seek، سرعت پخش، loading/error state و a11y پلیر (`v0.2.0-alpha.1`)
 - [ ] دانلود/آفلاین واقعی پس از ingest فایل‌های production

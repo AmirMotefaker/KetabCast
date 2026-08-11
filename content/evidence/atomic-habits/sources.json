@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "provider": "gemini-source-pack",
+  "model": "gemini-3.1-flash-lite",
+  "sources": [
+    {
+      "kind": "official-seed",
+      "title": "Atomic Habits: Tiny Changes, Remarkable Results by James Clear",
+      "url": "https://jamesclear.com/atomic-habits"
+    },
+    {
+      "kind": "official-seed",
+      "title": "Atomic Habits Summary by James Clear",
+      "url": "https://jamesclear.com/atomic-habits-summary"
+    },
+    {
+      "kind": "legal-metadata",
+      "title": "Open Library",
+      "url": "https://openlibrary.org/search.json?title=Atomic+Habits&author=James+Clear&limit=5&fields=key%2Ctitle%2Cauthor_name%2Cfirst_publish_year%2Cisbn%2Cedition_count%2Cpublisher%2Clanguage"
+    }
+  ]
+}

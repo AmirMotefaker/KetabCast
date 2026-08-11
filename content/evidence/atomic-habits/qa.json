@@ -1,0 +1,104 @@
+{
+  "pass": true,
+  "wordCount": 2192,
+  "keyIdeaCount": 5,
+  "sourceCount": 3,
+  "checks": [
+    {
+      "name": "word-count",
+      "pass": true,
+      "detail": "Expected 1500–2500 safety range; got 2192."
+    },
+    {
+      "name": "key-ideas",
+      "pass": true,
+      "detail": "Expected 4–6; got 5."
+    },
+    {
+      "name": "source-count",
+      "pass": true,
+      "detail": "Expected at least 2 source records; got 3."
+    },
+    {
+      "name": "no-urls-in-transcript",
+      "pass": true,
+      "detail": "No URL found."
+    }
+  ],
+  "provider": "gemini",
+  "model": "gemini-3.1-flash-lite",
+  "structuredMode": "longform-sections:plan-json-schema-primary",
+  "generationSections": [
+    {
+      "label": "opening",
+      "keyIdea": null,
+      "wordCount": 240,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "160–260",
+      "softRange": "140–280"
+    },
+    {
+      "label": "idea-1",
+      "keyIdea": "بهبود یک درصدی روزانه در طول یک سال، اثر مرکب چشمگیری ایجاد می‌کند.",
+      "wordCount": 348,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-2",
+      "keyIdea": "سیستم‌ها از اهداف مهم‌ترند؛ شما به سطح اهدافتان نمی‌رسید، بلکه به سطح سیستم‌هایتان سقوط می‌کنید.",
+      "wordCount": 326,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-3",
+      "keyIdea": "تغییر پایدار زمانی رخ می‌دهد که به جای تمرکز بر نتیجه، بر هویت خود تمرکز کنید.",
+      "wordCount": 349,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-4",
+      "keyIdea": "هر عادت از یک چرخه چهار مرحله‌ای شامل نشانه، اشتیاق، پاسخ و پاداش تشکیل شده است.",
+      "wordCount": 334,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-5",
+      "keyIdea": "طراحی محیط اطراف، کلید اصلی برای تسهیل عادت‌های خوب و دشوار کردن عادت‌های بد است.",
+      "wordCount": 338,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "closing",
+      "keyIdea": null,
+      "wordCount": 257,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "180–300",
+      "softRange": "160–320"
+    }
+  ],
+  "rightsMode": "web-research-only"
+}
