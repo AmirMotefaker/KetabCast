@@ -18,6 +18,7 @@
 - دامنه **zobdino.ir** ثبت شده؛ DNS/HTTPS/custom-domain cutover milestone مستقل بعدی است.
 - v0.2.0-beta.5 ✅ هر ۵ اپیزود production روی GitHub Release Assets و GitHub Pages زنده‌اند؛ Sulafat/Schedar برای Dual-Voice production انتخاب شده‌اند.
 - هدف MVP صوت: **۵ از ۵ اپیزود واقعی ✅**؛ milestone بعدی تولید و promotion دو صدای Sulafat/Schedar بدون حذف Piper fallback است.
+- v0.2.0-beta.5.1.1 — Gemini TTS Retry-After hotfix: 429 کوتاه‌مدت با retry hint دیگر daily quota تلقی نمی‌شود؛ صفحه اصلی نیز وضعیت milestone و پیشرفت Dual Voice را از GitHub Pages نمایش می‌دهد.
 
 هدف این سند: تعریف کامل محصول تا نسخه ۱.۰ (Production Platform) به‌طوری‌که هر AI Agent با خواندن این فایل بتواند بدون پرسیدن سؤال از صفر تا صد کار را جلو ببرد.
 

@@ -18,6 +18,9 @@ const TTS_RESPONSE_FORMAT = Object.freeze({ type: "audio" });
 const PCM_SAMPLE_RATE = 24000;
 const PCM_CHANNELS = 1;
 const MAX_TTS_NETWORK_REQUESTS = 10;
+const MIN_TTS_REQUEST_INTERVAL_MS = 7000;
+const DEFAULT_TRANSIENT_429_DELAY_MS = 30000;
+const MAX_TRANSIENT_RETRY_DELAY_MS = 120000;
 
 const BOOK_AUDIO_PROFILE = Object.freeze({
   "atomic-habits": {
@@ -49,6 +52,7 @@ const BATCHES = Object.freeze({
 });
 
 let ttsNetworkRequests = 0;
+let lastTtsRequestStartedAt = 0;
 
 function parseArgs(argv) {
   const options = {
@@ -278,14 +282,113 @@ async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function parseQuotaDetails(responseText) {
+function secondsToMilliseconds(value) {
+  const seconds = Number(value);
+
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return null;
+  }
+
+  return Math.ceil(seconds * 1000);
+}
+
+function parseRetryDelayValue(value) {
+  if (typeof value === "string") {
+    const match = value.trim().match(
+      /^([0-9]+(?:\.[0-9]+)?)s$/u,
+    );
+
+    return match
+      ? secondsToMilliseconds(match[1])
+      : null;
+  }
+
+  if (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+  ) {
+    const seconds = Number(value.seconds ?? 0);
+    const nanos = Number(value.nanos ?? 0);
+
+    if (
+      Number.isFinite(seconds) &&
+      Number.isFinite(nanos) &&
+      (seconds > 0 || nanos > 0)
+    ) {
+      return Math.ceil(
+        seconds * 1000 + nanos / 1_000_000,
+      );
+    }
+  }
+
+  return null;
+}
+
+function parseRetryDelayMs(responseText) {
+  const candidates = [];
+
   try {
     const parsed = JSON.parse(responseText);
     const details = Array.isArray(parsed?.error?.details)
       ? parsed.error.details
       : [];
 
-    const quotaIds = details
+    for (const detail of details) {
+      const type = String(detail?.["@type"] ?? "");
+
+      if (type.includes("RetryInfo")) {
+        const value = parseRetryDelayValue(
+          detail?.retryDelay,
+        );
+
+        if (value) candidates.push(value);
+      }
+    }
+
+    const message = String(
+      parsed?.error?.message ?? "",
+    );
+
+    const match = message.match(
+      /Please retry in\s+([0-9]+(?:\.[0-9]+)?)s/iu,
+    );
+
+    if (match) {
+      const value = secondsToMilliseconds(match[1]);
+
+      if (value) candidates.push(value);
+    }
+  } catch {
+    const match = responseText.match(
+      /Please retry in\s+([0-9]+(?:\.[0-9]+)?)s/iu,
+    );
+
+    if (match) {
+      const value = secondsToMilliseconds(match[1]);
+
+      if (value) candidates.push(value);
+    }
+  }
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  return Math.max(...candidates);
+}
+
+function parseQuotaDetails(responseText) {
+  let quotaIds = [];
+  let errorMessage = responseText;
+
+  try {
+    const parsed = JSON.parse(responseText);
+    const details = Array.isArray(parsed?.error?.details)
+      ? parsed.error.details
+      : [];
+
+    quotaIds = details
       .flatMap((detail) =>
         Array.isArray(detail?.violations)
           ? detail.violations.map((violation) =>
@@ -295,25 +398,102 @@ function parseQuotaDetails(responseText) {
       )
       .filter(Boolean);
 
-    return {
-      daily:
-        quotaIds.some((value) =>
-          value.includes("GenerateRequestsPerDayPerProjectPerModel"),
-        ) ||
-        (
-          responseText.includes("generate_content_free_tier_requests") &&
-          responseText.includes("limit: 10")
-        ),
-      quotaIds,
-    };
+    errorMessage = String(
+      parsed?.error?.message ?? responseText,
+    );
   } catch {
-    return {
-      daily:
-        responseText.includes("generate_content_free_tier_requests") &&
-        responseText.includes("limit: 10"),
-      quotaIds: [],
-    };
+    // Raw provider text is still useful for retry hints.
   }
+
+  const daily =
+    quotaIds.some((value) =>
+      /PerDay/iu.test(value),
+    ) ||
+    /\b(?:daily|per day)\b/iu.test(errorMessage);
+
+  return {
+    daily,
+    retryDelayMs: parseRetryDelayMs(responseText),
+    quotaIds,
+  };
+}
+
+function validateRateLimitClassifier() {
+  const transient = JSON.stringify({
+    error: {
+      message:
+        "Quota exceeded for metric: " +
+        "generate_content_free_tier_requests, limit: 10. " +
+        "Please retry in 23.145143415s.",
+      details: [
+        {
+          "@type":
+            "type.googleapis.com/google.rpc.RetryInfo",
+          retryDelay: "23.145143415s",
+        },
+      ],
+    },
+  });
+
+  const transientResult =
+    parseQuotaDetails(transient);
+
+  if (
+    transientResult.daily ||
+    !transientResult.retryDelayMs ||
+    transientResult.retryDelayMs < 23145
+  ) {
+    throw new Error(
+      "Transient 429 classifier self-test failed.",
+    );
+  }
+
+  const daily = JSON.stringify({
+    error: {
+      message: "Daily quota exceeded.",
+      details: [
+        {
+          violations: [
+            {
+              quotaId:
+                "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  const dailyResult = parseQuotaDetails(daily);
+
+  if (!dailyResult.daily) {
+    throw new Error(
+      "Daily quota classifier self-test failed.",
+    );
+  }
+
+  console.log(
+    "Dual-voice rate-limit classifier PASS: " +
+    "transient retry hint vs explicit daily quota.",
+  );
+}
+
+async function paceTtsRequest() {
+  const now = Date.now();
+  const elapsed = now - lastTtsRequestStartedAt;
+  const waitMs = Math.max(
+    0,
+    MIN_TTS_REQUEST_INTERVAL_MS - elapsed,
+  );
+
+  if (waitMs > 0) {
+    console.log(
+      `TTS pacing: waiting ${(waitMs / 1000).toFixed(1)}s.`,
+    );
+    await sleep(waitMs);
+  }
+
+  lastTtsRequestStartedAt = Date.now();
 }
 
 function reserveTtsNetworkRequest(plannedRequests) {
@@ -344,6 +524,7 @@ async function callTts(apiKey, voice, prompt, plannedRequests) {
   let lastError = null;
 
   for (let attempt = 1; attempt <= 2; attempt += 1) {
+    await paceTtsRequest();
     reserveTtsNetworkRequest(plannedRequests);
 
     try {
@@ -360,27 +541,71 @@ async function callTts(apiKey, voice, prompt, plannedRequests) {
       const responseText = await response.text();
 
       if (!response.ok) {
-        const quota = parseQuotaDetails(responseText);
+        const quota = parseQuotaDetails(
+          responseText,
+        );
 
-        if (response.status === 429 && quota.daily) {
+        if (
+          response.status === 429 &&
+          quota.daily
+        ) {
           throw new Error(
-            "DAILY_TTS_QUOTA_EXHAUSTED: Gemini TTS daily request quota " +
-            "is exhausted for this project. Do not retry this batch until " +
-            `the next daily reset. networkRequestsUsed=${ttsNetworkRequests}. ` +
+            "DAILY_TTS_QUOTA_EXHAUSTED: explicit per-day Gemini TTS " +
+            "quota is exhausted. Wait for the daily reset. " +
+            `networkRequestsUsed=${ttsNetworkRequests}. ` +
             responseText.slice(0, 900),
           );
         }
 
         const error = new Error(
-          `Gemini TTS HTTP ${response.status}: ${responseText.slice(0, 900)}`,
+          `Gemini TTS HTTP ${response.status}: ` +
+          responseText.slice(0, 900),
         );
 
         if (
-          [429, 500, 502, 503, 504].includes(response.status) &&
+          response.status === 429 &&
+          attempt < 2
+        ) {
+          const hinted =
+            quota.retryDelayMs ??
+            DEFAULT_TRANSIENT_429_DELAY_MS;
+
+          const waitMs = Math.min(
+            Math.max(
+              hinted + 1500,
+              MIN_TTS_REQUEST_INTERVAL_MS,
+            ),
+            MAX_TRANSIENT_RETRY_DELAY_MS,
+          );
+
+          lastError = error;
+
+          console.log(
+            "Gemini TTS transient 429; " +
+            `retrying after ${(waitMs / 1000).toFixed(1)}s. ` +
+            `networkRequestsUsed=${ttsNetworkRequests}.`,
+          );
+
+          await sleep(waitMs);
+          continue;
+        }
+
+        if (
+          [500, 502, 503, 504].includes(
+            response.status,
+          ) &&
           attempt < 2
         ) {
           lastError = error;
-          await sleep(3500);
+
+          const waitMs = 6000;
+
+          console.log(
+            `Gemini TTS HTTP ${response.status}; ` +
+            `retrying after ${(waitMs / 1000).toFixed(1)}s.`,
+          );
+
+          await sleep(waitMs);
           continue;
         }
 
@@ -393,10 +618,15 @@ async function callTts(apiKey, voice, prompt, plannedRequests) {
         findAudio(parsed);
 
       if (!audio?.data) {
-        throw new Error(`No output_audio returned for ${voice}.`);
+        throw new Error(
+          `No output_audio returned for ${voice}.`,
+        );
       }
 
-      const buffer = Buffer.from(audio.data, "base64");
+      const buffer = Buffer.from(
+        audio.data,
+        "base64",
+      );
 
       if (buffer.length < 2048) {
         throw new Error(
@@ -425,14 +655,13 @@ async function callTts(apiKey, voice, prompt, plannedRequests) {
       }
 
       if (attempt < 2) {
-        await sleep(2500);
+        await sleep(3000);
       }
     }
   }
 
   throw lastError;
 }
-
 async function providerToWav(generated, wavFile, tempFile) {
   const mime = String(generated.mimeType ?? "").toLowerCase();
 
@@ -729,6 +958,7 @@ async function main() {
   );
 
   validateSelection(selection, lexicon);
+  validateRateLimitClassifier();
 
   const selectedEpisodes = slugs.map((slug) => {
     const episode = episodes.find((item) => item.bookSlug === slug);
