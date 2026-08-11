@@ -1,6 +1,6 @@
 {
   "name": "ketabcast",
-  "version": "0.2.0-alpha.12",
+  "version": "0.2.0-alpha.12.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
