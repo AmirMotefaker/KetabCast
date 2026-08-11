@@ -57,7 +57,7 @@ MIT
 
 **فاز جاری:** `v0.2.0 — Audio واقعی`
 
-وضعیت v0.2.0-alpha.10: کارخانه free-first به Gemini 3.1 Flash-Lite مهاجرت کرده، research از source-pack قانونی بدون paid Google Search grounding انجام می‌شود و GitHub Models بازنشسته از مسیر runtime حذف شده است.
+وضعیت v0.2.0-alpha.11: Voice Lab فارسی برای انتخاب انسانی صدای زن/مرد، تلفظ fa-IR، مکث طبیعی و دموی میکس پادکستی اضافه شده است؛ فایل‌های alpha.10 هنوز production-ready نیستند.
 
 ### GitHub lifecycle
 

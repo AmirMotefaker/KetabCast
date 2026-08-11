@@ -1,0 +1,131 @@
+name: Persian Voice Lab
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: persian-voice-lab
+  cancel-in-progress: false
+
+jobs:
+  audition:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_TTS_MODEL: ${{ vars.GEMINI_TTS_MODEL || 'gemini-3.1-flash-tts-preview' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Voice Lab contracts
+        run: |
+          npm run voice:lab:validate
+          npm run check:text
+          npm run check:episodes
+
+      - name: Validate Gemini TTS secret
+        shell: bash
+        run: |
+          if [[ -z "$GEMINI_API_KEY" ]]; then
+            echo "::error::GEMINI_API_KEY is required."
+            exit 1
+          fi
+
+      - name: Install FFmpeg
+        shell: bash
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+
+      - name: Generate Gemini fa-IR voice auditions
+        run: |
+          node scripts/voice-lab.mjs \
+            --mode generate \
+            --out .voice-lab
+
+      - name: Generate podcast mix demos
+        run: node scripts/voice-lab-mix.mjs .voice-lab
+
+      - name: Validate Voice Lab output
+        shell: bash
+        run: |
+          RAW_COUNT="$(find .voice-lab/raw -type f -name '*.mp3' | wc -l)"
+          MIX_COUNT="$(find .voice-lab/podcast-demo -type f -name '*.mp3' | wc -l)"
+
+          [[ "$RAW_COUNT" -eq 8 ]] || {
+            echo "::error::Expected 8 raw MP3s; got $RAW_COUNT."
+            exit 1
+          }
+
+          [[ "$MIX_COUNT" -eq 8 ]] || {
+            echo "::error::Expected 8 podcast demos; got $MIX_COUNT."
+            exit 1
+          }
+
+          for file in .voice-lab/raw/*.mp3 .voice-lab/podcast-demo/*.mp3; do
+            ffprobe -v error "$file" >/dev/null
+          done
+
+          echo "Voice Lab output PASS: 8 raw + 8 podcast demos."
+
+      - name: Validate artifact safety
+        shell: bash
+        run: |
+          FORBIDDEN_FILES="$(
+            find .voice-lab -type f \( \
+              -name '.env' -o \
+              -name '.env.*' -o \
+              -iname '*credential*' -o \
+              -iname '*secret*' -o \
+              -iname '*.pem' -o \
+              -iname '*.key' \
+            \) -print
+          )"
+
+          if [[ -n "$FORBIDDEN_FILES" ]]; then
+            echo "::error::Secret-like filename found in Voice Lab artifact."
+            printf '%s\n' "$FORBIDDEN_FILES"
+            exit 1
+          fi
+
+          mapfile -d '' TEXT_FILES < <(
+            find .voice-lab -type f \( \
+              -name '*.json' -o \
+              -name '*.md' -o \
+              -name '*.txt' \
+            \) -print0
+          )
+
+          for FILE in "${TEXT_FILES[@]}"; do
+            if grep -Fq -- "$GEMINI_API_KEY" "$FILE"; then
+              echo "::error::Voice Lab artifact contains GEMINI_API_KEY."
+              exit 1
+            fi
+          done
+
+          echo "Voice Lab artifact safety PASS."
+
+      - name: Upload Persian Voice Lab
+        uses: actions/upload-artifact@v7
+        with:
+          name: persian-voice-lab-${{ github.run_id }}
+          path: .voice-lab
+          if-no-files-found: error
+          retention-days: 14
+          include-hidden-files: true
