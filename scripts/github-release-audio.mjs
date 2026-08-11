@@ -7,6 +7,8 @@ import {
 import { basename, dirname, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 
+import { resolveFactorySlugs } from "./factory-selection.mjs";
+
 function parseArgs(argv) {
   const args = {};
   for (let index = 0; index < argv.length; index += 1) {
@@ -137,10 +139,7 @@ const catalog = JSON.parse(
 );
 const inspection = JSON.parse(await readFile(inspectionPath, "utf8"));
 
-const slugs =
-  slugArg === "all"
-    ? catalog.books.map((book) => book.slug)
-    : [slugArg];
+const slugs = resolveFactorySlugs(catalog, slugArg);
 
 const release = await githubJson(
   `https://api.github.com/repos/${repo}/releases/tags/${encodeURIComponent(

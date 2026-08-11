@@ -8,7 +8,7 @@ on:
         required: true
         default: all
         type: choice
-        options: [all, atomic-habits, deep-work, think-again, zero-to-one, leading-teams]
+        options: [all, new-three, atomic-habits, deep-work, think-again, zero-to-one, leading-teams]
       stage:
         description: Highest stage to execute
         required: true
@@ -18,7 +18,12 @@ on:
       release_tag:
         description: Exact code release tag for publish stage
         required: true
-        default: v0.2.0-beta.3
+        default: v0.2.0-beta.5
+        type: string
+      release_issue:
+        description: Linked release Issue number for publish stage
+        required: true
+        default: "8"
         type: string
 
 permissions:
@@ -177,6 +182,8 @@ jobs:
 
           if [[ "${{ inputs.slug }}" == "all" ]]; then
             SLUGS="atomic-habits deep-work think-again zero-to-one leading-teams"
+          elif [[ "${{ inputs.slug }}" == "new-three" ]]; then
+            SLUGS="think-again zero-to-one leading-teams"
           else
             SLUGS="${{ inputs.slug }}"
           fi
@@ -209,6 +216,8 @@ jobs:
 
           if [[ "${{ inputs.slug }}" == "all" ]]; then
             EXPECTED_COUNT=5
+          elif [[ "${{ inputs.slug }}" == "new-three" ]]; then
+            EXPECTED_COUNT=3
           else
             EXPECTED_COUNT=1
           fi
@@ -314,14 +323,14 @@ jobs:
             git config user.name "ketabcast-content-bot"
             git config user.email "actions@users.noreply.github.com"
             git tag -a "$MEDIA_TAG" "$GITHUB_SHA" \
-              -m "KetabCast media assets for ${{ inputs.release_tag }}"
+              -m "Zobdino media assets for ${{ inputs.release_tag }}"
             git push origin "$MEDIA_TAG"
           fi
 
           if ! gh release view "$MEDIA_TAG" >/dev/null 2>&1; then
             NOTES="$RUNNER_TEMP/media-release-notes.md"
             printf '%s\n' \
-              "## KetabCast production audio media release" \
+              "## Zobdino production audio media release" \
               "" \
               "- Code base SHA: $GITHUB_SHA" \
               "- Target code release: ${{ inputs.release_tag }}" \
@@ -334,7 +343,7 @@ jobs:
 
             gh release create "$MEDIA_TAG" \
               --verify-tag \
-              --title "KetabCast Media — ${{ inputs.release_tag }}" \
+              --title "Zobdino Media — ${{ inputs.release_tag }}" \
               --notes-file "$NOTES" \
               --prerelease
           fi
@@ -381,14 +390,14 @@ jobs:
           git switch -c "$BRANCH"
 
           git add src/content/episodes.json content/evidence
-          git commit -m "content: publish generated KetabCast audio (#8)"
+          git commit -m "content: publish generated Zobdino audio (#${{ inputs.release_issue }})"
           HEAD_SHA="$(git rev-parse HEAD)"
           git push -u origin "$BRANCH"
 
           BODY_FILE="$RUNNER_TEMP/publication-pr.md"
           printf '%s\n' \
             "Tracks #8" \
-            "Tracks #13" \
+            "Closes #${{ inputs.release_issue }}" \
             "" \
             "Automated online content factory publication." \
             "" \
@@ -407,7 +416,7 @@ jobs:
           PR_URL="$(gh pr create \
             --base main \
             --head "$BRANCH" \
-            --title "content: publish verified KetabCast audio" \
+            --title "content: publish verified Zobdino audio" \
             --body-file "$BODY_FILE")"
 
           PR_NUMBER="${PR_URL##*/}"
@@ -528,12 +537,12 @@ jobs:
 
           git fetch origin main --tags
           git tag -a "$TAG" "$MERGE_SHA" \
-            -m "KetabCast $TAG - automated production audio"
+            -m "Zobdino $TAG - automated production audio"
           git push origin "$TAG"
 
           NOTES="$RUNNER_TEMP/release-notes.md"
           printf '%s\n' \
-            "## Automated KetabCast production audio" \
+            "## Automated Zobdino production audio" \
             "" \
             "- Factory run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             "- Publication PR: ${{ steps.publication.outputs.pr_url }}" \
@@ -551,12 +560,12 @@ jobs:
           gh release create "$TAG" \
             .factory-output/release-assets/*.mp3 \
             --verify-tag \
-            --title "KetabCast $TAG - Automated Audio" \
+            --title "Zobdino $TAG - Automated Audio" \
             --notes-file "$NOTES" \
             --prerelease
 
           gh issue comment 8 \
             --body "Automated content milestone published. Tag: $TAG | Exact SHA: $MERGE_SHA | Media: ${{ steps.media_release.outputs.url }} | PR: ${{ steps.publication.outputs.pr_url }} | Factory run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
-          gh issue comment 13 \
-            --body "beta.1 online audio publication completed. Tag: $TAG | Exact SHA: $MERGE_SHA | Media: ${{ steps.media_release.outputs.url }} | PR: ${{ steps.publication.outputs.pr_url }}"
+          gh issue comment "${{ inputs.release_issue }}" \
+            --body "Automated Zobdino audio publication completed. Tag: $TAG | Exact SHA: $MERGE_SHA | Media: ${{ steps.media_release.outputs.url }} | PR: ${{ steps.publication.outputs.pr_url }} | Factory run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
