@@ -1,5 +1,6 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
 
@@ -8,6 +9,9 @@ const MODEL =
   "gemini-3.1-flash-tts-preview";
 
 const API_REVISION = "2026-05-20";
+const TTS_RESPONSE_FORMAT = Object.freeze({ type: "audio" });
+const PCM_SAMPLE_RATE = 24000;
+const PCM_CHANNELS = 1;
 const VOICES = [
   { order: 1, name: "Sulafat", style: "Warm" },
   { order: 2, name: "Gacrux", style: "Mature" },
@@ -89,17 +93,18 @@ function directorPrompt(spokenText) {
 function findAudio(value) {
   if (!value || typeof value !== "object") return null;
 
-  if (
-    typeof value.data === "string" &&
-    (
-      value.type === "audio" ||
-      String(value.mime_type ?? "").startsWith("audio/")
-    )
-  ) {
-    return {
-      data: value.data,
-      mimeType: value.mime_type ?? "audio/mp3",
-    };
+  if (typeof value.data === "string") {
+    const type = String(value.type ?? "");
+    const mimeType = String(value.mime_type ?? "");
+
+    if (type === "audio" || mimeType.startsWith("audio/")) {
+      return {
+        data: value.data,
+        mimeType: mimeType || "audio/pcm",
+        sampleRate: Number(value.sample_rate ?? PCM_SAMPLE_RATE),
+        channels: Number(value.channels ?? PCM_CHANNELS),
+      };
+    }
   }
 
   for (const child of Object.values(value)) {
@@ -117,6 +122,74 @@ function findAudio(value) {
   return null;
 }
 
+function runFfmpeg(args) {
+  const result = spawnSync("ffmpeg", args, {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  if (result.status !== 0) {
+    throw new Error(
+      `ffmpeg failed (${result.status}): ${result.stderr || result.stdout}`,
+    );
+  }
+}
+
+async function transcodeGeminiAudioToMp3({
+  buffer,
+  mimeType,
+  sampleRate,
+  channels,
+  tempBase,
+  outputFile,
+}) {
+  const normalizedMime = String(mimeType ?? "").toLowerCase();
+
+  if (normalizedMime === "audio/mp3" || normalizedMime === "audio/mpeg") {
+    await writeFile(outputFile, buffer);
+    return;
+  }
+
+  if (normalizedMime === "audio/wav" || normalizedMime === "audio/x-wav") {
+    const wavFile = `${tempBase}.wav`;
+    await writeFile(wavFile, buffer);
+
+    try {
+      runFfmpeg([
+        "-hide_banner","-loglevel","error","-y",
+        "-i",wavFile,
+        "-ar","44100",
+        "-ac","1",
+        "-b:a","128k",
+        outputFile,
+      ]);
+    } finally {
+      await unlink(wavFile).catch(() => {});
+    }
+
+    return;
+  }
+
+  const pcmFile = `${tempBase}.pcm`;
+  await writeFile(pcmFile, buffer);
+
+  try {
+    runFfmpeg([
+      "-hide_banner","-loglevel","error","-y",
+      "-f","s16le",
+      "-ar",String(sampleRate || PCM_SAMPLE_RATE),
+      "-ac",String(channels || PCM_CHANNELS),
+      "-i",pcmFile,
+      "-ar","44100",
+      "-ac","1",
+      "-b:a","128k",
+      outputFile,
+    ]);
+  } finally {
+    await unlink(pcmFile).catch(() => {});
+  }
+}
+
 async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -128,16 +201,10 @@ async function callTts(apiKey, voice, prompt) {
   const body = {
     model: MODEL,
     input: prompt,
-    response_format: {
-      type: "audio",
-      mime_type: "audio/mp3",
-      bit_rate: 128000,
-      delivery: "inline",
-    },
+    response_format: TTS_RESPONSE_FORMAT,
     generation_config: {
       speech_config: [{ voice: voice.name }],
     },
-    store: false,
   };
 
   let lastError = null;
@@ -162,9 +229,11 @@ async function callTts(apiKey, voice, prompt) {
         );
       }
 
-      const audio = findAudio(JSON.parse(responseText));
+      const parsed = JSON.parse(responseText);
+      const audio = findAudio(parsed.output_audio) ?? findAudio(parsed);
+
       if (!audio?.data) {
-        throw new Error(`No inline audio returned for ${voice.name}.`);
+        throw new Error(`No output_audio data returned for ${voice.name}.`);
       }
 
       const buffer = Buffer.from(audio.data, "base64");
@@ -174,7 +243,12 @@ async function callTts(apiKey, voice, prompt) {
         );
       }
 
-      return { buffer, mimeType: audio.mimeType };
+      return {
+        buffer,
+        mimeType: audio.mimeType,
+        sampleRate: audio.sampleRate,
+        channels: audio.channels,
+      };
     } catch (error) {
       lastError = error;
       if (attempt < 5) {
@@ -225,6 +299,26 @@ async function validate() {
   ]) {
     if (!prompt.includes(marker)) {
       throw new Error(`Director prompt missing marker: ${marker}`);
+    }
+  }
+
+  const responseFormatKeys = Object.keys(TTS_RESPONSE_FORMAT);
+
+  if (
+    responseFormatKeys.length !== 1 ||
+    responseFormatKeys[0] !== "type" ||
+    TTS_RESPONSE_FORMAT.type !== "audio"
+  ) {
+    throw new Error(
+      "Gemini TTS response_format contract must be exactly { type: 'audio' }.",
+    );
+  }
+
+  for (const forbidden of ["mime_type", "bit_rate", "delivery"]) {
+    if (Object.hasOwn(TTS_RESPONSE_FORMAT, forbidden)) {
+      throw new Error(
+        `Gemini TTS response_format contains forbidden field: ${forbidden}`,
+      );
     }
   }
 
@@ -292,7 +386,24 @@ async function main() {
 
     const generated = await callTts(apiKey, voice, config.prompt);
     const file = path.join(rawDir, filename);
-    await writeFile(file, generated.buffer);
+    const tempBase = path.join(
+      rawDir,
+      `${prefix}-${slug(voice.name)}-${slug(voice.style)}-source`,
+    );
+
+    await transcodeGeminiAudioToMp3({
+      ...generated,
+      tempBase,
+      outputFile: file,
+    });
+
+    const finalMp3 = await readFile(file);
+
+    if (finalMp3.length < 4096) {
+      throw new Error(
+        `Transcoded MP3 too small for ${voice.name}: ${finalMp3.length} bytes.`,
+      );
+    }
 
     manifest.voices.push({
       order: voice.order,
@@ -300,9 +411,12 @@ async function main() {
       publishedStyleDescriptor: voice.style,
       genderLabel: null,
       rawFile: `raw/${filename}`,
-      mimeType: generated.mimeType,
-      bytes: generated.buffer.length,
-      sha256: sha256(generated.buffer),
+      mimeType: "audio/mpeg",
+      sourceMimeType: generated.mimeType,
+      sourceSampleRate: generated.sampleRate,
+      sourceChannels: generated.channels,
+      bytes: finalMp3.length,
+      sha256: sha256(finalMp3),
     });
 
     await sleep(1200);

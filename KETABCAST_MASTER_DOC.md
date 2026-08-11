@@ -319,6 +319,7 @@ Next.js App Router, TS, Tailwind v4, تم تاریک/بنفش, RTL/وزیرمت�
 - [x] free AI failover experiment: Cloudflare daily quota → GitHub Models (v0.2.0-alpha.9; provider retired upstream)
 - [x] Gemini 3.1 Flash-Lite source-pack generation + retired GitHub Models removal (v0.2.0-alpha.10)
 - [x] Persian Voice Lab automation: Gemini 3.1 TTS auditions + fa-IR pronunciation/prosody + podcast mix demos (v0.2.0-alpha.11)
+- [x] Gemini TTS audio contract + PCM-to-MP3 Voice Lab hotfix (v0.2.0-alpha.11.1)
 - [ ] Human-select one perceived-female and one perceived-male Iranian Persian voice from the alpha.11 audition pack
 - [ ] یکپارچه‌سازی پلیر با فایل صوتی واقعی + verified GitHub Release Asset URL (R2 اختیاری برای آینده)
 - [x] Progress/Seek، سرعت پخش، loading/error state و a11y پلیر (`v0.2.0-alpha.1`)
