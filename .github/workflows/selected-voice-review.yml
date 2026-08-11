@@ -1,0 +1,268 @@
+name: Selected Dual-Voice Full Episode Review
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: selected-dual-voice-review
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_TTS_MODEL: ${{ vars.GEMINI_TTS_MODEL || 'gemini-3.1-flash-tts-preview' }}
+
+      SOURCE_RUN_ID: "31457755919"
+      SOURCE_ARTIFACT_ID: "9088681208"
+      SOURCE_ARTIFACT_NAME: "content-factory-all-31457755919"
+      SOURCE_ARTIFACT_DIGEST: "sha256:792593b23430654d1083c0b7afb5c19ea9bc2d9394baba735020685904228a35"
+      SOURCE_HEAD_SHA: "1f7ff62842f549916dc0b6aab8d306b80e1d8f15"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Validate selected voice contracts
+        run: |
+          npm run voice:selected:validate
+          npm run check:text
+          npm run check:episodes
+
+      - name: Validate Gemini TTS secret
+        shell: bash
+        run: |
+          [[ -n "$GEMINI_API_KEY" ]] || {
+            echo "::error::GEMINI_API_KEY is required."
+            exit 1
+          }
+
+      - name: Install FFmpeg and faster-whisper
+        shell: bash
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+
+          python3 -m venv .venv
+          . .venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install faster-whisper==1.2.1
+
+      - name: Verify exact source script artifact
+        shell: bash
+        run: |
+          META="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$SOURCE_ARTIFACT_ID")"
+
+          [[ "$(jq -r .name <<<"$META")" == "$SOURCE_ARTIFACT_NAME" ]] || {
+            echo "::error::Source artifact name mismatch."
+            exit 1
+          }
+
+          [[ "$(jq -r .expired <<<"$META")" == "false" ]] || {
+            echo "::error::Source artifact expired."
+            exit 1
+          }
+
+          [[ "$(jq -r .digest <<<"$META")" == "$SOURCE_ARTIFACT_DIGEST" ]] || {
+            echo "::error::Source artifact digest metadata mismatch."
+            exit 1
+          }
+
+          [[ "$(jq -r .workflow_run.id <<<"$META")" == "$SOURCE_RUN_ID" ]] || {
+            echo "::error::Source artifact run mismatch."
+            exit 1
+          }
+
+          [[ "$(jq -r .workflow_run.head_sha <<<"$META")" == "$SOURCE_HEAD_SHA" ]] || {
+            echo "::error::Source artifact head SHA mismatch."
+            exit 1
+          }
+
+          echo "Pinned source artifact metadata PASS."
+
+      - name: Download and verify source artifact bytes
+        shell: bash
+        run: |
+          mkdir -p .source-artifact
+
+          gh api \
+            "repos/$GITHUB_REPOSITORY/actions/artifacts/$SOURCE_ARTIFACT_ID/zip" \
+            > .source-artifact/source.zip
+
+          ACTUAL="sha256:$(sha256sum .source-artifact/source.zip | awk '{print $1}')"
+
+          [[ "$ACTUAL" == "$SOURCE_ARTIFACT_DIGEST" ]] || {
+            echo "::error::Downloaded source artifact digest mismatch."
+            echo "Expected: $SOURCE_ARTIFACT_DIGEST"
+            echo "Actual:   $ACTUAL"
+            exit 1
+          }
+
+          unzip -q .source-artifact/source.zip -d .source-artifact/unpacked
+
+      - name: Extract exact source scripts
+        shell: bash
+        run: |
+          mkdir -p \
+            .selected-source/atomic-habits \
+            .selected-source/deep-work
+
+          for slug in atomic-habits deep-work; do
+            SOURCE="$(
+              find .source-artifact/unpacked \
+                -type f \
+                -path "*/$slug/script.fa.txt" \
+                -print \
+                -quit
+            )"
+
+            [[ -n "$SOURCE" ]] || {
+              echo "::error::Pinned script not found for $slug."
+              exit 1
+            }
+
+            cp "$SOURCE" ".selected-source/$slug/script.fa.txt"
+
+            WORDS="$(wc -w < ".selected-source/$slug/script.fa.txt")"
+
+            [[ "$WORDS" -ge 1500 && "$WORDS" -le 2500 ]] || {
+              echo "::error::$slug word count $WORDS outside 1500–2500."
+              exit 1
+            }
+
+            echo "$slug pinned script: $WORDS words"
+          done
+
+      - name: Render 2 books x 2 selected voices
+        run: |
+          node scripts/selected-voice-render.mjs \
+            --mode generate \
+            --source .selected-source \
+            --out .selected-review
+
+      - name: Round-trip QA four dry narrations
+        shell: bash
+        run: |
+          . .venv/bin/activate
+
+          for slug in atomic-habits deep-work; do
+            SCRIPT=".selected-review/$slug/script.display.fa.txt"
+
+            for role_voice in \
+              "female:sulafat" \
+              "male:schedar"
+            do
+              ROLE="${role_voice%%:*}"
+              VOICE="${role_voice##*:}"
+
+              AUDIO=".selected-review/$slug/$ROLE/$ROLE-$VOICE-dry.mp3"
+
+              python scripts/audio-qa.py \
+                --audio "$AUDIO" \
+                --script "$SCRIPT" \
+                --out ".selected-review/$slug/$ROLE/audio-qa.json" \
+                --transcript-out ".selected-review/$slug/$ROLE/audio-qa-transcript.txt" \
+                --model small \
+                --threshold 0.60
+            done
+          done
+
+      - name: Validate four final podcast files
+        shell: bash
+        run: |
+          EXPECTED=(
+            ".selected-review/atomic-habits/female/female-sulafat-podcast.mp3"
+            ".selected-review/atomic-habits/male/male-schedar-podcast.mp3"
+            ".selected-review/deep-work/female/female-sulafat-podcast.mp3"
+            ".selected-review/deep-work/male/male-schedar-podcast.mp3"
+          )
+
+          for FILE in "${EXPECTED[@]}"; do
+            test -s "$FILE" || {
+              echo "::error::Missing final file: $FILE"
+              exit 1
+            }
+
+            ffprobe -v error "$FILE" >/dev/null
+
+            DURATION="$(
+              ffprobe \
+                -v error \
+                -show_entries format=duration \
+                -of default=noprint_wrappers=1:nokey=1 \
+                "$FILE"
+            )"
+
+            awk \
+              -v d="$DURATION" \
+              'BEGIN { exit !(d >= 600 && d <= 1335) }' || {
+                echo "::error::Unexpected duration $DURATION for $FILE"
+                exit 1
+              }
+
+            echo "Final podcast PASS: $FILE duration=${DURATION}s"
+          done
+
+      - name: Validate review artifact safety
+        shell: bash
+        run: |
+          FORBIDDEN="$(
+            find .selected-review -type f \( \
+              -name '.env' -o \
+              -name '.env.*' -o \
+              -iname '*credential*' -o \
+              -iname '*secret*' -o \
+              -iname '*.pem' -o \
+              -iname '*.key' -o \
+              -iname 'id_rsa*' \
+            \) -print
+          )"
+
+          if [[ -n "$FORBIDDEN" ]]; then
+            echo "::error::Review artifact contains secret-like filename."
+            printf '%s\n' "$FORBIDDEN"
+            exit 1
+          fi
+
+          mapfile -d '' TEXT_FILES < <(
+            find .selected-review -type f \( \
+              -name '*.json' -o \
+              -name '*.md' -o \
+              -name '*.txt' \
+            \) -print0
+          )
+
+          for FILE in "${TEXT_FILES[@]}"; do
+            if grep -Fq -- "$GEMINI_API_KEY" "$FILE"; then
+              echo "::error::Review artifact contains GEMINI_API_KEY."
+              exit 1
+            fi
+          done
+
+      - name: Upload four-file review pack
+        uses: actions/upload-artifact@v7
+        with:
+          name: selected-dual-voice-review-${{ github.run_id }}
+          path: .selected-review
+          if-no-files-found: error
+          retention-days: 14
+          include-hidden-files: true

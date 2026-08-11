@@ -57,7 +57,7 @@ MIT
 
 **فاز جاری:** `v0.2.0 — Audio واقعی`
 
-وضعیت v0.2.0-alpha.11.1: Voice Lab فارسی با contract صحیح Gemini TTS و تبدیل PCM به MP3 اصلاح شده؛ انتخاب انسانی صدای زن/مرد همچنان gate انتشار است.
+وضعیت v0.2.0-alpha.12: صدای خانم Sulafat و صدای آقا Schedar با انتخاب انسانی تثبیت شده‌اند و چهار اپیزود کامل review-only از scriptهای pin‌شده تولید می‌شوند؛ انتشار production همچنان بسته است.
 
 ### GitHub lifecycle
 
