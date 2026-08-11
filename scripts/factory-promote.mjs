@@ -2,6 +2,7 @@ import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { resolveFactorySlugs } from "./factory-selection.mjs";
+import { buildVerifiedReadyEpisode } from "./factory-promotion-entry.mjs";
 
 function parseArgs(argv) {
   const result = {};
@@ -89,26 +90,20 @@ for (const slug of slugs) {
   const index = episodes.findIndex(
     (episode) => episode.id === book.episodeId,
   );
-  if (index < 0) throw new Error(`Episode not found: ${book.episodeId}`);
 
-  episodes[index] = {
-    ...episodes[index],
-    title: generated.title,
-    description: generated.description,
-    transcript: generated.transcript,
-    keyIdeas: generated.keyIdeas,
-    format: "standard",
-    audio: {
-      status: "ready",
-      objectKey: inspected.objectKey,
-      publicUrl: remote.publicUrl,
-      mimeType: "audio/mpeg",
-      durationSeconds: inspected.durationSeconds,
-      downloadable: false,
-      sha256: inspected.sha256,
-      bytes: inspected.bytes,
-    },
-  };
+  const promotedEpisode = buildVerifiedReadyEpisode({
+    existingEpisode: index >= 0 ? episodes[index] : null,
+    book,
+    generated,
+    inspected,
+    remote,
+  });
+
+  if (index >= 0) {
+    episodes[index] = promotedEpisode;
+  } else {
+    episodes.push(promotedEpisode);
+  }
 
   const evidenceDir = resolve("content/evidence", slug);
   await mkdir(evidenceDir, { recursive: true });
