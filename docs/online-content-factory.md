@@ -176,29 +176,26 @@ Before either upload, the workflow runs a safety guard that:
 
 This setting affects Actions QA artifacts only. It does not publish production
 audio or change episode readiness.
-## Free AI provider failover
+## Active free AI provider chain
 
-The free-first inference chain is:
+As of v0.2.0-alpha.10, GitHub Models is not part of the KetabCast runtime. GitHub
+fully retired the Models playground/catalog/inference API on 2026-07-30.
 
-1. Gemini, when `GEMINI_API_KEY` is configured.
-2. Cloudflare Workers AI while its free daily allocation is available.
-3. GitHub Models through the workflow-scoped `GITHUB_TOKEN`.
+The active free-first chain is:
 
-The GitHub Models fallback uses `openai/gpt-4.1-mini` by default and requires
-only the workflow permission `models: read`; no additional API secret or
-payment method is required for included free usage.
+1. Gemini 3.1 Flash-Lite when `GEMINI_API_KEY` is configured.
+2. Cloudflare Workers AI as an optional secondary fallback while its daily free
+   allocation is available.
 
-When Cloudflare reports its daily free-allocation quota error, the factory marks
-Cloudflare exhausted for the remainder of that run and sends subsequent
-research, planning and narration-section requests directly to GitHub Models.
+Both Gemini research and script generation are grounded in KetabCast's legal
+source pack. Gemini research intentionally does not enable live Google Search
+grounding in the Free Tier path. The source pack already contains official seed
+pages, Google Books legal metadata/previews, and Open Library metadata.
 
-To stay inside free prototyping limits, the fallback:
+Gemini 3.1 Flash-Lite uses the same bounded long-form generation engine as the
+fallback path: compact episode plan, opening, exactly five idea sections,
+closing, per-section retry/tolerance evidence, and the hard assembled
+1,500–2,500 Persian word QA gate.
 
-- spaces requests by at least 4.5 seconds
-- caps generation at 4,000 output tokens
-- compacts very large prompts while preserving the instruction head and source
-  dossier tail
-- keeps all existing legal-source, structured-envelope, section-length and
-  final transcript QA gates
-
-Generation evidence records the actual provider/model path.
+The workflow does not require `models: read` and does not call
+`models.github.ai`.

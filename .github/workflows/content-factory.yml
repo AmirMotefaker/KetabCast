@@ -27,7 +27,6 @@ permissions:
   issues: write
   actions: write
   statuses: write
-  models: read
 
 concurrency:
   group: content-factory-${{ inputs.slug }}
@@ -40,12 +39,11 @@ jobs:
     env:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GOOGLE_BOOKS_API_KEY: ${{ secrets.GOOGLE_BOOKS_API_KEY }}
-      GEMINI_RESEARCH_MODEL: ${{ vars.GEMINI_RESEARCH_MODEL || 'gemini-2.5-flash-lite' }}
-      GEMINI_SCRIPT_MODEL: ${{ vars.GEMINI_SCRIPT_MODEL || 'gemini-2.5-flash' }}
+      GEMINI_RESEARCH_MODEL: ${{ vars.GEMINI_RESEARCH_MODEL || 'gemini-3.1-flash-lite' }}
+      GEMINI_SCRIPT_MODEL: ${{ vars.GEMINI_SCRIPT_MODEL || 'gemini-3.1-flash-lite' }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_AI_MODEL: ${{ vars.CLOUDFLARE_AI_MODEL || '@cf/meta/llama-3.3-70b-instruct-fp8-fast' }}
-      KETABCAST_GITHUB_MODELS_MODEL: ${{ vars.KETABCAST_GITHUB_MODELS_MODEL || 'openai/gpt-4.1-mini' }}
       GH_TOKEN: ${{ github.token }}
 
     steps:
@@ -72,8 +70,8 @@ jobs:
       - name: Validate generation credentials
         shell: bash
         run: |
-          if [[ -z "$GEMINI_API_KEY" && ( -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ) && -z "$GH_TOKEN" ]]; then
-            echo "::error::Configure Gemini, Cloudflare Workers AI, or GitHub Models via GITHUB_TOKEN."
+          if [[ -z "$GEMINI_API_KEY" && ( -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ) ]]; then
+            echo "::error::Configure GEMINI_API_KEY or Cloudflare Workers AI fallback credentials."
             exit 1
           fi
 

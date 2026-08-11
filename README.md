@@ -57,7 +57,7 @@ MIT
 
 **فاز جاری:** `v0.2.0 — Audio واقعی`
 
-وضعیت v0.2.0-alpha.9: پس از تمام‌شدن سهمیه رایگان روزانه Cloudflare Workers AI، کارخانه بدون secret یا کارت جدید به GitHub Models و مدل `openai/gpt-4.1-mini` سوییچ می‌کند؛ تمام gateهای محتوایی و صوتی حفظ می‌شوند.
+وضعیت v0.2.0-alpha.10: کارخانه free-first به Gemini 3.1 Flash-Lite مهاجرت کرده، research از source-pack قانونی بدون paid Google Search grounding انجام می‌شود و GitHub Models بازنشسته از مسیر runtime حذف شده است.
 
 ### GitHub lifecycle
 
