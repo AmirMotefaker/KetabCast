@@ -32,7 +32,7 @@
 
 ## وضعیت فعلی
 
-**نسخه عمومی:** `v0.2.0-beta.2`
+**نسخه عمومی:** `v0.2.0-beta.3`
 
 | بخش | وضعیت |
 |---|---|
@@ -44,7 +44,7 @@
 | GitHub Release Assets + SHA-256 integrity | ✅ |
 | خط تولید research → script → audio → QA | ✅ |
 | صدای دوگانه Sulafat / Schedar | 🧪 Review pending |
-| هدف MVP | **2 / 5 اپیزود واقعی** |
+| هدف MVP | **۲ اپیزود واقعی + ۳ عنوان منتخب در خط تولید؛ 5/5 catalog** |
 | دامنه `zobdino.ir` | ثبت شده؛ اتصال DNS/HTTPS در milestone جدا |
 
 نسخه‌ی زنده فعلاً از GitHub Pages سرو می‌شود:
@@ -174,6 +174,7 @@ Local-only progress، milestone تمام‌شده محسوب نمی‌شود.
 - [x] AI content factory اولیه
 - [x] دو اپیزود production با GitHub Release Assets
 - [x] برند نهایی **Zobdino / زبدینو**
+- [x] انتخاب و اضافه‌شدن سه عنوان بعدی MVP به catalog و factory: Think Again، Zero to One، تیم ایدئال
 - [ ] اتصال `zobdino.ir` + HTTPS
 - [ ] Voice Review نهایی Sulafat / Schedar
 - [ ] promotion دقیق فایل‌های صوتی review‌شده
