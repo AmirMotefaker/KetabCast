@@ -7,9 +7,9 @@ import {
 } from "./content-source-pack.mjs";
 
 const GEMINI_RESEARCH_MODEL =
-  process.env.GEMINI_RESEARCH_MODEL?.trim() || "gemini-2.5-flash-lite";
+  process.env.GEMINI_RESEARCH_MODEL?.trim() || "gemini-3.1-flash-lite";
 const GEMINI_SCRIPT_MODEL =
-  process.env.GEMINI_SCRIPT_MODEL?.trim() || "gemini-2.5-flash";
+  process.env.GEMINI_SCRIPT_MODEL?.trim() || "gemini-3.1-flash-lite";
 const CLOUDFLARE_MODEL =
   process.env.CLOUDFLARE_AI_MODEL?.trim() ||
   "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
@@ -73,36 +73,20 @@ function geminiText(response) {
     .trim();
 }
 
-function geminiGroundingSources(response) {
-  const chunks =
-    response.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
-  const sources = [];
-  const seen = new Set();
-  for (const chunk of chunks) {
-    const web = chunk?.web;
-    if (!web?.uri || seen.has(web.uri)) continue;
-    seen.add(web.uri);
-    sources.push({
-      kind: "gemini-google-search",
-      title: web.title ?? web.uri,
-      url: web.uri,
-    });
-  }
-  return sources;
-}
-
 async function geminiGenerate({
   model,
   prompt,
   grounded = false,
   responseSchema = null,
+  temperature = null,
+  maxOutputTokens = 8192,
 }) {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) throw new Error("GEMINI_API_KEY is not configured.");
 
   const generationConfig = {
-    temperature: grounded ? 0.2 : 0.35,
-    maxOutputTokens: 8192,
+    temperature: temperature ?? (grounded ? 0.2 : 0.35),
+    maxOutputTokens,
   };
   if (responseSchema) {
     generationConfig.responseMimeType = "application/json";
@@ -129,14 +113,26 @@ async function geminiGenerate({
   });
 }
 
-const GITHUB_MODELS_MODEL =
-  process.env.KETABCAST_GITHUB_MODELS_MODEL?.trim() ||
-  "openai/gpt-4.1-mini";
-const GITHUB_MODELS_PROMPT_CHAR_LIMIT = 10000;
-const GITHUB_MODELS_MIN_INTERVAL_MS = 4500;
-
 let cloudflareDailyQuotaExhausted = false;
-let githubModelsLastRequestAt = 0;
+const generationProvidersUsed = new Set();
+const generationModelsUsed = new Set();
+
+function recordGenerationProvider(provider, model) {
+  generationProvidersUsed.add(provider);
+  generationModelsUsed.add(model);
+}
+
+function currentGenerationProviderLabel() {
+  return generationProvidersUsed.size > 0
+    ? [...generationProvidersUsed].join("+")
+    : "unknown";
+}
+
+function currentGenerationModelLabel() {
+  return generationModelsUsed.size > 0
+    ? [...generationModelsUsed].join(" -> ")
+    : "unknown";
+}
 
 function isCloudflareDailyQuotaError(error) {
   const message = String(error?.message ?? error).toLowerCase();
@@ -150,116 +146,36 @@ function isCloudflareDailyQuotaError(error) {
   );
 }
 
-function currentFreeProviderLabel() {
-  return cloudflareDailyQuotaExhausted
-    ? "cloudflare-workers-ai+github-models"
-    : "cloudflare-workers-ai";
-}
-
-function currentFreeModelLabel() {
-  return cloudflareDailyQuotaExhausted
-    ? `${CLOUDFLARE_MODEL} -> ${GITHUB_MODELS_MODEL}`
-    : CLOUDFLARE_MODEL;
-}
-
-function compactGitHubModelsPrompt(prompt) {
-  const text = String(prompt);
-  if (text.length <= GITHUB_MODELS_PROMPT_CHAR_LIMIT) {
-    return text;
-  }
-
-  const marker =
-    "\n\n[KetabCast note: middle context compacted for GitHub Models " +
-    "free-tier input limits.]\n\n";
-  const remaining =
-    GITHUB_MODELS_PROMPT_CHAR_LIMIT - marker.length;
-  const headLength = Math.floor(remaining / 2);
-  const tailLength = remaining - headLength;
-
-  return (
-    text.slice(0, headLength) +
-    marker +
-    text.slice(-tailLength)
-  );
-}
-
-async function githubModelsGenerate(
+async function geminiTextGenerate(
   prompt,
   { responseFormat = null, temperature = null } = {},
 ) {
-  const token =
-    process.env.GH_TOKEN?.trim() ||
-    process.env.GITHUB_TOKEN?.trim();
-
-  if (!token) {
-    throw new Error(
-      "GitHub Models fallback requires GH_TOKEN/GITHUB_TOKEN.",
-    );
-  }
-
-  const elapsed = Date.now() - githubModelsLastRequestAt;
-  if (
-    githubModelsLastRequestAt > 0 &&
-    elapsed < GITHUB_MODELS_MIN_INTERVAL_MS
-  ) {
-    await sleep(GITHUB_MODELS_MIN_INTERVAL_MS - elapsed);
-  }
-
-  let effectivePrompt = compactGitHubModelsPrompt(prompt);
+  let effectivePrompt = prompt;
+  let responseSchema = null;
 
   if (responseFormat?.type === "json_schema") {
-    effectivePrompt +=
-      "\n\nReturn exactly one valid JSON object and no Markdown. " +
-      "It must satisfy this schema:\n" +
-      JSON.stringify(responseFormat.json_schema ?? {});
+    responseSchema = responseFormat.json_schema ?? null;
   } else if (responseFormat?.type === "json_object") {
     effectivePrompt +=
       "\n\nReturn exactly one valid JSON object and no Markdown.";
   }
 
-  githubModelsLastRequestAt = Date.now();
+  const response = await geminiGenerate({
+    model: GEMINI_SCRIPT_MODEL,
+    prompt: effectivePrompt,
+    grounded: false,
+    responseSchema,
+    temperature,
+    maxOutputTokens: 8192,
+  });
 
-  const response = await fetchJsonWithRetry(
-    "https://models.github.ai/inference/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "X-GitHub-Api-Version": "2026-03-10",
-      },
-      body: JSON.stringify({
-        model: GITHUB_MODELS_MODEL,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are KetabCast's research and podcast writing engine. " +
-              "Be factual, copyright-safe, fluent in Persian, and follow " +
-              "the supplied legal-source constraints.",
-          },
-          {
-            role: "user",
-            content: effectivePrompt,
-          },
-        ],
-        temperature:
-          temperature ?? (responseFormat ? 0.1 : 0.3),
-        max_tokens: 4000,
-      }),
-    },
-  );
-
-  const content = response.choices?.[0]?.message?.content;
-
-  if (typeof content !== "string" || !content.trim()) {
-    throw new Error(
-      "GitHub Models returned an empty or unsupported response.",
-    );
+  const text = geminiText(response);
+  if (!text) {
+    throw new Error("Gemini returned an empty generation response.");
   }
 
-  return content.trim();
+  recordGenerationProvider("gemini", GEMINI_SCRIPT_MODEL);
+  return text;
 }
 
 async function cloudflareGenerate(
@@ -267,31 +183,19 @@ async function cloudflareGenerate(
   { responseFormat = null, temperature = null } = {},
 ) {
   if (cloudflareDailyQuotaExhausted) {
-    console.warn(
-      `Cloudflare daily free quota is exhausted; using GitHub Models ` +
-        `${GITHUB_MODELS_MODEL}.`,
+    throw new Error(
+      "Cloudflare Workers AI daily free allocation is exhausted.",
     );
-
-    return githubModelsGenerate(prompt, {
-      responseFormat,
-      temperature,
-    });
   }
 
   const token = process.env.CLOUDFLARE_API_TOKEN?.trim();
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
 
   if (!token || !accountId) {
-    console.warn(
-      `Cloudflare credentials are unavailable; using GitHub Models ` +
-        `${GITHUB_MODELS_MODEL}.`,
+    throw new Error(
+      "Cloudflare fallback requires CLOUDFLARE_API_TOKEN and " +
+        "CLOUDFLARE_ACCOUNT_ID.",
     );
-    cloudflareDailyQuotaExhausted = true;
-
-    return githubModelsGenerate(prompt, {
-      responseFormat,
-      temperature,
-    });
   }
 
   const url =
@@ -345,10 +249,12 @@ async function cloudflareGenerate(
           "Workers AI returned an empty string response.",
         );
       }
+      recordGenerationProvider("cloudflare-workers-ai", CLOUDFLARE_MODEL);
       return trimmed;
     }
 
     if (value && typeof value === "object" && !Array.isArray(value)) {
+      recordGenerationProvider("cloudflare-workers-ai", CLOUDFLARE_MODEL);
       return value;
     }
 
@@ -356,23 +262,35 @@ async function cloudflareGenerate(
       `Workers AI returned an unsupported response type: ${typeof value}`,
     );
   } catch (error) {
-    if (!isCloudflareDailyQuotaError(error)) {
-      throw error;
+    if (isCloudflareDailyQuotaError(error)) {
+      cloudflareDailyQuotaExhausted = true;
     }
-
-    cloudflareDailyQuotaExhausted = true;
-
-    console.warn(
-      "Cloudflare Workers AI daily free allocation is exhausted. " +
-        `Switching the remainder of this run to GitHub Models ` +
-        `${GITHUB_MODELS_MODEL}.`,
-    );
-
-    return githubModelsGenerate(prompt, {
-      responseFormat,
-      temperature,
-    });
+    throw error;
   }
+}
+
+async function preferredGenerate(
+  prompt,
+  { responseFormat = null, temperature = null } = {},
+) {
+  if (process.env.GEMINI_API_KEY?.trim()) {
+    try {
+      return await geminiTextGenerate(prompt, {
+        responseFormat,
+        temperature,
+      });
+    } catch (error) {
+      console.warn(
+        `Gemini ${GEMINI_SCRIPT_MODEL} generation failed; ` +
+          `trying Workers AI fallback: ${error}`,
+      );
+    }
+  }
+
+  return cloudflareGenerate(prompt, {
+    responseFormat,
+    temperature,
+  });
 }
 
 function sourcePackForPrompt(pack) {
@@ -433,24 +351,6 @@ Do not write the final Persian podcast yet.
 `.trim();
 }
 
-const episodeSchema = {
-  type: "OBJECT",
-  properties: {
-    title: { type: "STRING" },
-    description: { type: "STRING" },
-    transcript: { type: "STRING" },
-    keyIdeas: { type: "ARRAY", items: { type: "STRING" } },
-    actionToday: { type: "STRING" },
-  },
-  required: [
-    "title",
-    "description",
-    "transcript",
-    "keyIdeas",
-    "actionToday",
-  ],
-};
-
 const cloudflareEpisodePlanSchema = {
   type: "object",
   properties: {
@@ -469,35 +369,6 @@ const cloudflareEpisodePlanSchema = {
     "actionToday",
   ],
 };
-
-function scriptPrompt(book, research) {
-  return `
-You are the senior Persian writer for KetabCast.
-
-Create an ORIGINAL Persian podcast script based only on the research dossier
-below. This is a summary/analysis, not a translation.
-
-BOOK
-${book.titleFa} (${book.title}) — ${book.authorFa} (${book.author})
-
-HARD RULES
-- Persian must sound native, conversational and editorially polished.
-- Do not translate the book chapter-by-chapter.
-- Do not reproduce or closely paraphrase copyrighted prose.
-- Do not invent claims that are absent from the dossier.
-- Do not include URLs, citations, source names or production notes in transcript.
-- Explain 4–6 central ideas with concrete, understandable examples.
-- Include a compelling opening, transitions, conclusion, and one practical
-  "اقدام امروز".
-- Target 1,800–2,200 Persian words for roughly 12–15 minutes.
-- keyIdeas must contain 4–6 concise Persian items.
-- description must be 1–2 concise Persian sentences.
-- title must be concise and suitable for the episode UI.
-
-RESEARCH DOSSIER
-${research}
-`.trim();
-}
 
 function extractJson(text) {
   const trimmed = text.trim();
@@ -523,26 +394,6 @@ function coerceJsonObject(value) {
   throw new Error(
     `Structured episode output has unsupported type: ${typeof value}`,
   );
-}
-
-function assertEpisodeEnvelope(value) {
-  if (
-    !value ||
-    typeof value !== "object" ||
-    Array.isArray(value) ||
-    typeof value.title !== "string" ||
-    typeof value.description !== "string" ||
-    typeof value.transcript !== "string" ||
-    !Array.isArray(value.keyIdeas) ||
-    value.keyIdeas.some((idea) => typeof idea !== "string") ||
-    typeof value.actionToday !== "string"
-  ) {
-    throw new Error(
-      "Structured episode response did not match the required envelope.",
-    );
-  }
-
-  return value;
 }
 
 function assertEpisodePlan(value) {
@@ -667,7 +518,7 @@ RESEARCH DOSSIER
 ${research}
 `.trim();
 
-    const generated = await cloudflareGenerate(prompt, {
+    const generated = await preferredGenerate(prompt, {
       temperature: 0.3,
     });
 
@@ -734,7 +585,7 @@ ${research}
   );
 }
 
-async function writeCloudflareLongformEpisode(book, research) {
+async function writeBoundedLongformEpisode(book, research) {
   const planPrompt = longformPlanPrompt(book, research);
   const planAttempts = [
     {
@@ -773,7 +624,7 @@ async function writeCloudflareLongformEpisode(book, research) {
         : planPrompt;
 
     try {
-      const response = await cloudflareGenerate(attemptPrompt, {
+      const response = await preferredGenerate(attemptPrompt, {
         responseFormat: attempt.responseFormat,
         temperature: 0.1,
       });
@@ -785,7 +636,7 @@ async function writeCloudflareLongformEpisode(book, research) {
       const message = String(error?.message ?? error);
       planErrors.push(`${attempt.name}: ${message}`);
       console.warn(
-        `Workers AI episode-plan attempt ${index + 1}/` +
+        `Bounded episode-plan attempt ${index + 1}/` +
           `${planAttempts.length} failed (${attempt.name}): ${message}`,
       );
 
@@ -797,7 +648,7 @@ async function writeCloudflareLongformEpisode(book, research) {
 
   if (!plan) {
     throw new Error(
-      "Workers AI episode plan failed after all attempts: " +
+      "Bounded episode plan failed after all attempts: " +
         planErrors.join(" | "),
     );
   }
@@ -882,8 +733,8 @@ async function writeCloudflareLongformEpisode(book, research) {
   );
 
   return {
-    provider: currentFreeProviderLabel(),
-    model: currentFreeModelLabel(),
+    provider: currentGenerationProviderLabel(),
+    model: currentGenerationModelLabel(),
     structuredMode: `longform-sections:${planMode}`,
     sections: sections.map((section) => ({
       label: section.label,
@@ -950,24 +801,34 @@ function deterministicQa(episode, sourceCount) {
 
 async function researchBook(book, pack) {
   const prompt = researchPrompt(book, pack);
+
   if (process.env.GEMINI_API_KEY?.trim()) {
     try {
       const response = await geminiGenerate({
         model: GEMINI_RESEARCH_MODEL,
-        prompt,
-        grounded: true,
+        prompt:
+          `${prompt}\n\nIMPORTANT: This Free Tier research pass must use ` +
+          "only the supplied legal source pack. Do not use live Google Search " +
+          "grounding and do not introduce claims that are absent from the pack.",
+        grounded: false,
+        temperature: 0.2,
+        maxOutputTokens: 8192,
       });
+
       const text = geminiText(response);
-      if (!text) throw new Error("Gemini returned empty research text.");
+      if (!text) {
+        throw new Error("Gemini returned empty research text.");
+      }
+
       return {
-        provider: "gemini-google-search",
+        provider: "gemini-source-pack",
         model: GEMINI_RESEARCH_MODEL,
         text,
-        searchSources: geminiGroundingSources(response),
+        searchSources: [],
       };
     } catch (error) {
       console.warn(
-        `Gemini grounded research failed; trying Workers AI fallback: ${error}`,
+        `Gemini source-pack research failed; trying Workers AI fallback: ${error}`,
       );
     }
   }
@@ -984,58 +845,15 @@ async function researchBook(book, pack) {
   }
 
   return {
-    provider: currentFreeProviderLabel(),
-    model: currentFreeModelLabel(),
+    provider: "cloudflare-workers-ai",
+    model: CLOUDFLARE_MODEL,
     text: generatedResearch,
     searchSources: [],
   };
 }
 
 async function writeEpisode(book, research) {
-  const prompt = scriptPrompt(book, research);
-
-  if (process.env.GEMINI_API_KEY?.trim()) {
-    try {
-      const response = await geminiGenerate({
-        model: GEMINI_SCRIPT_MODEL,
-        prompt,
-        responseSchema: episodeSchema,
-      });
-
-      const value = assertEpisodeEnvelope(
-        coerceJsonObject(geminiText(response)),
-      );
-      const words = countWords(value.transcript);
-
-      if (words < 1500 || words > 2500) {
-        throw new Error(
-          `Gemini transcript length ${words} is outside 1500–2500; ` +
-            "falling back to bounded Workers AI long-form generation.",
-        );
-      }
-
-      return {
-        provider: "gemini",
-        model: GEMINI_SCRIPT_MODEL,
-        structuredMode: "gemini-response-schema",
-        sections: [
-          {
-            label: "gemini-single-pass",
-            keyIdea: null,
-            wordCount: words,
-            attempts: 1,
-          },
-        ],
-        value,
-      };
-    } catch (error) {
-      console.warn(
-        `Gemini script generation failed; trying Workers AI fallback: ${error}`,
-      );
-    }
-  }
-
-  return writeCloudflareLongformEpisode(book, research);
+  return writeBoundedLongformEpisode(book, research);
 }
 
 async function writeJson(path, value) {
@@ -1061,11 +879,10 @@ async function processBook(book, stage, outRoot) {
   if (
     !process.env.GEMINI_API_KEY?.trim() &&
     !(process.env.CLOUDFLARE_API_TOKEN?.trim() &&
-      process.env.CLOUDFLARE_ACCOUNT_ID?.trim()) &&
-    !(process.env.GH_TOKEN?.trim() || process.env.GITHUB_TOKEN?.trim())
+      process.env.CLOUDFLARE_ACCOUNT_ID?.trim())
   ) {
     throw new Error(
-      "Generation requires Gemini, Cloudflare Workers AI, or GitHub Models via GITHUB_TOKEN.",
+      "Generation requires GEMINI_API_KEY or Cloudflare Workers AI fallback credentials.",
     );
   }
 
