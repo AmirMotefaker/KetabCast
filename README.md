@@ -57,7 +57,7 @@ MIT
 
 **فاز جاری:** `v0.2.0 — Audio واقعی`
 
-وضعیت v0.2.0-alpha.12.1: رندر دوصدایی با بودجه ۸ درخواست Gemini TTS برای Free Tier اصلاح شده؛ اجرای review بعد از reset سهمیه و انتشار production همچنان بسته است.
+وضعیت v0.2.0-beta.1: لانچ عمومی با دو فایل صوتی واقعی و review‌شده انجام شده؛ Atomic Habits و Deep Work از GitHub Release Assets پخش می‌شوند و ارتقای دوصدایی Sulafat/Schedar در ادامه انجام می‌شود.
 
 ### GitHub lifecycle
 

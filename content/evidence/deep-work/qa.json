@@ -1,0 +1,104 @@
+{
+  "pass": true,
+  "wordCount": 2211,
+  "keyIdeaCount": 5,
+  "sourceCount": 2,
+  "checks": [
+    {
+      "name": "word-count",
+      "pass": true,
+      "detail": "Expected 1500–2500 safety range; got 2211."
+    },
+    {
+      "name": "key-ideas",
+      "pass": true,
+      "detail": "Expected 4–6; got 5."
+    },
+    {
+      "name": "source-count",
+      "pass": true,
+      "detail": "Expected at least 2 source records; got 2."
+    },
+    {
+      "name": "no-urls-in-transcript",
+      "pass": true,
+      "detail": "No URL found."
+    }
+  ],
+  "provider": "gemini",
+  "model": "gemini-3.1-flash-lite",
+  "structuredMode": "longform-sections:plan-json-schema-primary",
+  "generationSections": [
+    {
+      "label": "opening",
+      "keyIdea": null,
+      "wordCount": 231,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "160–260",
+      "softRange": "140–280"
+    },
+    {
+      "label": "idea-1",
+      "keyIdea": "کار عمیق به معنای تمرکز شدید بر فعالیت‌های دشوار ذهنی است که باعث رشد مهارت‌ها می‌شود.",
+      "wordCount": 356,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-2",
+      "keyIdea": "کار سطحی شامل وظایف اداری و پاسخگویی‌های مداوم است که ارزش افزوده کمی ایجاد می‌کنند.",
+      "wordCount": 323,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-3",
+      "keyIdea": "توانایی تمرکز عمیق مانند یک عضله است که با تمرین و تکرار تقویت می‌شود.",
+      "wordCount": 344,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-4",
+      "keyIdea": "به دلیل کمیاب بودن تمرکز در دنیای امروز، کسانی که این مهارت را دارند مزیت رقابتی بزرگی کسب می‌کنند.",
+      "wordCount": 333,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-5",
+      "keyIdea": "استفاده از زمان‌بندی دقیق و ایجاد آیین‌های تمرکز، کلید ورود به حالت کار عمیق است.",
+      "wordCount": 357,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "closing",
+      "keyIdea": null,
+      "wordCount": 267,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "180–300",
+      "softRange": "160–320"
+    }
+  ],
+  "rightsMode": "web-research-only"
+}
