@@ -32,7 +32,7 @@
 
 ## وضعیت فعلی
 
-**نسخه عمومی:** `v0.2.0-beta.4.2`
+**نسخه عمومی:** `v0.2.0-beta.5.1`
 
 | بخش | وضعیت |
 |---|---|
@@ -43,8 +43,8 @@
 | Deep Work — صوت واقعی | ✅ |
 | GitHub Release Assets + SHA-256 integrity | ✅ |
 | خط تولید research → script → audio → QA | ✅ |
-| صدای دوگانه Sulafat / Schedar | 🧪 Review pending |
-| هدف MVP | **۲ اپیزود واقعی + ۳ عنوان منتخب در خط تولید؛ 5/5 catalog** |
+| صدای دوگانه Sulafat / Schedar | 🏗️ Production batch pipeline آماده؛ promotion پس از QA سه batch |
+| هدف MVP | **۵ از ۵ اپیزود با صوت production؛ Dual Voice مرحله بعد** |
 | دامنه `zobdino.ir` | ثبت شده؛ اتصال DNS/HTTPS در milestone جدا |
 
 نسخه‌ی زنده فعلاً از GitHub Pages سرو می‌شود:
