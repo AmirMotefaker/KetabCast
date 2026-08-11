@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "locale": "fa-IR",
+  "selectionMethod": "human-listening",
+  "selectedFrom": {
+    "release": "v0.2.0-alpha.11.1",
+    "runId": 31462344234,
+    "exactSha": "fa4567130df38eb01b5e74de0250b4e0915c830a"
+  },
+  "voices": {
+    "female": {
+      "provider": "gemini",
+      "model": "gemini-3.1-flash-tts-preview",
+      "providerVoice": "Sulafat",
+      "styleDescriptor": "Warm",
+      "selectedSample": "01-sulafat-warm-podcast-demo.mp3"
+    },
+    "male": {
+      "provider": "gemini",
+      "model": "gemini-3.1-flash-tts-preview",
+      "providerVoice": "Schedar",
+      "styleDescriptor": "Even",
+      "selectedSample": "06-schedar-even-podcast-demo.mp3"
+    }
+  },
+  "sourceScriptArtifact": {
+    "runId": 31457755919,
+    "artifactId": 9088681208,
+    "name": "content-factory-all-31457755919",
+    "digest": "sha256:792593b23430654d1083c0b7afb5c19ea9bc2d9394baba735020685904228a35",
+    "headSha": "1f7ff62842f549916dc0b6aab8d306b80e1d8f15"
+  }
+}
