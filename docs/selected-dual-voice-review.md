@@ -28,3 +28,19 @@ music/ducking reference, not the final licensed artistic soundtrack.
 
 No production publish occurs in alpha.12. Exact approved bytes are promoted
 only after human listening approval.
+## Free-tier TTS request budget — alpha.12.1
+
+The initial alpha.12 runtime used many paragraph-level TTS calls and hit the
+Gemini 3.1 Flash TTS free-tier request quota during the first full voice.
+
+alpha.12.1 uses exactly two paragraph-balanced chunks per book/voice:
+
+- 2 books
+- 2 human-selected voices
+- 2 TTS chunks each
+- 8 planned successful requests total
+- 10 hard network-request cap
+
+Daily quota errors are not blindly retried. The two-request headroom is reserved
+for transient retries. Human listening remains mandatory because longer TTS
+chunks can drift in voice/prosody.

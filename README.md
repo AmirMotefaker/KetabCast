@@ -57,7 +57,7 @@ MIT
 
 **فاز جاری:** `v0.2.0 — Audio واقعی`
 
-وضعیت v0.2.0-alpha.12: صدای خانم Sulafat و صدای آقا Schedar با انتخاب انسانی تثبیت شده‌اند و چهار اپیزود کامل review-only از scriptهای pin‌شده تولید می‌شوند؛ انتشار production همچنان بسته است.
+وضعیت v0.2.0-alpha.12.1: رندر دوصدایی با بودجه ۸ درخواست Gemini TTS برای Free Tier اصلاح شده؛ اجرای review بعد از reset سهمیه و انتشار production همچنان بسته است.
 
 ### GitHub lifecycle
 

@@ -17,6 +17,10 @@ const API_REVISION = "2026-05-20";
 const TTS_RESPONSE_FORMAT = Object.freeze({ type: "audio" });
 const PCM_SAMPLE_RATE = 24000;
 const PCM_CHANNELS = 1;
+const PLANNED_TTS_REQUESTS = 8;
+const MAX_TTS_NETWORK_REQUESTS = 10;
+
+let ttsNetworkRequests = 0;
 
 const BOOKS = [
   {
@@ -133,53 +137,76 @@ function buildChunks(text) {
     .map((value) => value.trim())
     .filter(Boolean);
 
-  const chunks = [];
+  if (paragraphs.length < 2) {
+    throw new Error(
+      "Full-episode review requires at least two source paragraphs.",
+    );
+  }
 
-  paragraphs.forEach((paragraph, paragraphIndex) => {
-    const sentences = sentencePieces(paragraph);
-    let buffer = "";
+  const paragraphWordCounts = paragraphs.map((paragraph) =>
+    countWords(paragraph),
+  );
 
-    const flush = () => {
-      const value = buffer.trim();
+  const totalWords = paragraphWordCounts.reduce(
+    (sum, value) => sum + value,
+    0,
+  );
 
-      if (!value) return;
+  const targetFirstHalfWords = totalWords / 2;
+  let runningWords = 0;
+  let splitIndex = 1;
+  let bestDistance = Number.POSITIVE_INFINITY;
 
-      chunks.push({
-        paragraphIndex,
-        text: value,
-      });
+  for (let index = 0; index < paragraphs.length - 1; index += 1) {
+    runningWords += paragraphWordCounts[index];
 
-      buffer = "";
-    };
+    const distance = Math.abs(
+      runningWords - targetFirstHalfWords,
+    );
 
-    for (const sentence of sentences) {
-      const candidate =
-        buffer.length === 0 ? sentence : `${buffer} ${sentence}`;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      splitIndex = index + 1;
+    }
+  }
 
-      if (candidate.length > 1050 && buffer.length > 0) {
-        flush();
-        buffer = sentence;
-      } else {
-        buffer = candidate;
-      }
+  const groups = [
+    paragraphs.slice(0, splitIndex),
+    paragraphs.slice(splitIndex),
+  ];
+
+  const chunks = groups.map((group, index) => {
+    const chunkText = group.join("\n\n").trim();
+    const words = countWords(chunkText);
+
+    if (words < 500 || words > 1400) {
+      throw new Error(
+        `Chunk ${index + 1} has ${words} words; ` +
+        "expected 500–1400 for the two-request review budget.",
+      );
     }
 
-    flush();
-  });
-
-  return chunks.map((chunk, index) => {
-    const next = chunks[index + 1];
-    const paragraphEnds =
-      !next ||
-      next.paragraphIndex !== chunk.paragraphIndex;
-
     return {
-      ...chunk,
       index,
-      pauseAfterMs: paragraphEnds ? 900 : 520,
-      paragraphEnds,
+      paragraphIndex: index === 0 ? 0 : splitIndex,
+      paragraphEnds: true,
+      pauseAfterMs: index === 0 ? 1200 : 900,
+      text: chunkText,
+      words,
     };
   });
+
+  if (chunks.length !== 2) {
+    throw new Error(
+      `Expected exactly 2 TTS chunks; got ${chunks.length}.`,
+    );
+  }
+
+  console.log(
+    `Balanced TTS chunks: ${chunks[0].words} + ${chunks[1].words} words.`,
+  );
+
+  return chunks;
 }
 
 function directorPrompt(text, voiceRole, bookSlug, chunk) {
@@ -253,6 +280,82 @@ async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function parseQuotaDetails(responseText) {
+  try {
+    const parsed = JSON.parse(responseText);
+    const details = Array.isArray(parsed?.error?.details)
+      ? parsed.error.details
+      : [];
+
+    const quotaIds = details
+      .flatMap((detail) =>
+        Array.isArray(detail?.violations)
+          ? detail.violations.map((violation) =>
+              String(violation?.quotaId ?? ""),
+            )
+          : [],
+      )
+      .filter(Boolean);
+
+    const retryDetail = details.find(
+      (detail) => typeof detail?.retryDelay === "string",
+    );
+
+    const retryDelayText =
+      retryDetail?.retryDelay ??
+      String(parsed?.error?.message ?? "").match(
+        /Please retry in ([0-9.]+)s/i,
+      )?.[1];
+
+    const retryDelaySeconds =
+      typeof retryDelayText === "string"
+        ? Number.parseFloat(retryDelayText.replace(/s$/i, ""))
+        : Number(retryDelayText);
+
+    return {
+      daily:
+        quotaIds.some((value) =>
+          value.includes(
+            "GenerateRequestsPerDayPerProjectPerModel",
+          ),
+        ) ||
+        (
+          responseText.includes(
+            "generate_content_free_tier_requests",
+          ) &&
+          responseText.includes("limit: 10")
+        ),
+      quotaIds,
+      retryDelaySeconds:
+        Number.isFinite(retryDelaySeconds)
+          ? retryDelaySeconds
+          : null,
+    };
+  } catch {
+    return {
+      daily:
+        responseText.includes(
+          "generate_content_free_tier_requests",
+        ) &&
+        responseText.includes("limit: 10"),
+      quotaIds: [],
+      retryDelaySeconds: null,
+    };
+  }
+}
+
+function reserveTtsNetworkRequest() {
+  if (ttsNetworkRequests >= MAX_TTS_NETWORK_REQUESTS) {
+    throw new Error(
+      "TTS_REQUEST_BUDGET_EXHAUSTED: refusing to exceed " +
+      `${MAX_TTS_NETWORK_REQUESTS} Gemini TTS network requests. ` +
+      `Planned successful requests: ${PLANNED_TTS_REQUESTS}.`,
+    );
+  }
+
+  ttsNetworkRequests += 1;
+}
+
 async function callTts(apiKey, voice, prompt) {
   const body = {
     model: MODEL,
@@ -268,7 +371,9 @@ async function callTts(apiKey, voice, prompt) {
 
   let lastError = null;
 
-  for (let attempt = 1; attempt <= 5; attempt += 1) {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    reserveTtsNetworkRequest();
+
     try {
       const response = await fetch(url, {
         method: "POST",
@@ -283,6 +388,18 @@ async function callTts(apiKey, voice, prompt) {
       const responseText = await response.text();
 
       if (!response.ok) {
+        const quota = parseQuotaDetails(responseText);
+
+        if (response.status === 429 && quota.daily) {
+          throw new Error(
+            "DAILY_TTS_QUOTA_EXHAUSTED: Gemini 3.1 Flash TTS " +
+            "Free Tier request quota is exhausted for this project. " +
+            "Do not retry this workflow until the next daily reset. " +
+            `networkRequestsUsed=${ttsNetworkRequests}. ` +
+            responseText.slice(0, 1200),
+          );
+        }
+
         const error = new Error(
           `Gemini TTS HTTP ${response.status}: ${responseText.slice(0, 1200)}`,
         );
@@ -295,8 +412,19 @@ async function callTts(apiKey, voice, prompt) {
           response.status === 504
         ) {
           lastError = error;
-          await sleep(Math.min(2000 * 2 ** (attempt - 1), 20000));
-          continue;
+
+          if (attempt < 3) {
+            const providerDelay =
+              quota.retryDelaySeconds === null
+                ? 0
+                : Math.ceil(quota.retryDelaySeconds * 1000) + 1000;
+
+            const backoff =
+              Math.min(3000 * 2 ** (attempt - 1), 15000);
+
+            await sleep(Math.max(providerDelay, backoff));
+            continue;
+          }
         }
 
         throw error;
@@ -330,8 +458,21 @@ async function callTts(apiKey, voice, prompt) {
     } catch (error) {
       lastError = error;
 
-      if (attempt < 5) {
-        await sleep(Math.min(1500 * 2 ** (attempt - 1), 16000));
+      if (
+        String(error?.message ?? error).includes(
+          "DAILY_TTS_QUOTA_EXHAUSTED",
+        ) ||
+        String(error?.message ?? error).includes(
+          "TTS_REQUEST_BUDGET_EXHAUSTED",
+        )
+      ) {
+        throw error;
+      }
+
+      if (attempt < 3) {
+        await sleep(
+          Math.min(2000 * 2 ** (attempt - 1), 12000),
+        );
       }
     }
   }
@@ -432,9 +573,9 @@ async function renderVariant({
 
   const chunks = buildChunks(spokenText);
 
-  if (chunks.length < 5 || chunks.length > 40) {
+  if (chunks.length !== 2) {
     throw new Error(
-      `${book.slug}/${role}: unexpected chunk count ${chunks.length}.`,
+      `${book.slug}/${role}: expected exactly 2 chunks; got ${chunks.length}.`,
     );
   }
 
@@ -697,6 +838,22 @@ async function main() {
 
   await validateContracts(selection, lexicon);
 
+  const plannedVariants =
+    BOOKS.length * Object.keys(selection.voices).length;
+
+  const plannedRequests = plannedVariants * 2;
+
+  if (plannedRequests !== PLANNED_TTS_REQUESTS) {
+    throw new Error(
+      `Planned TTS request budget mismatch: ${plannedRequests}.`,
+    );
+  }
+
+  console.log(
+    `TTS request budget: planned=${plannedRequests}, ` +
+    `hardNetworkCap=${MAX_TTS_NETWORK_REQUESTS}.`,
+  );
+
   if (options.mode === "validate") {
     return;
   }
@@ -720,6 +877,10 @@ async function main() {
     selection,
     reviewOnly: true,
     productionPublished: false,
+    ttsRequestBudget: {
+      plannedSuccessfulRequests: PLANNED_TTS_REQUESTS,
+      hardNetworkRequestCap: MAX_TTS_NETWORK_REQUESTS,
+    },
     assets: [],
   };
 
@@ -784,6 +945,15 @@ async function main() {
       `Expected 4 rendered variants; got ${manifest.assets.length}.`,
     );
   }
+
+  if (ttsNetworkRequests > MAX_TTS_NETWORK_REQUESTS) {
+    throw new Error(
+      `TTS network request cap exceeded: ${ttsNetworkRequests}.`,
+    );
+  }
+
+  manifest.ttsRequestBudget.networkRequestsUsed =
+    ttsNetworkRequests;
 
   await writeFile(
     path.join(outRoot, "selected-voice-review-manifest.json"),
