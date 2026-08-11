@@ -1,0 +1,104 @@
+{
+  "pass": true,
+  "wordCount": 2187,
+  "keyIdeaCount": 5,
+  "sourceCount": 3,
+  "checks": [
+    {
+      "name": "word-count",
+      "pass": true,
+      "detail": "Expected 1500–2500 safety range; got 2187."
+    },
+    {
+      "name": "key-ideas",
+      "pass": true,
+      "detail": "Expected 4–6; got 5."
+    },
+    {
+      "name": "source-count",
+      "pass": true,
+      "detail": "Expected at least 2 source records; got 3."
+    },
+    {
+      "name": "no-urls-in-transcript",
+      "pass": true,
+      "detail": "No URL found."
+    }
+  ],
+  "provider": "gemini",
+  "model": "gemini-3.1-flash-lite",
+  "structuredMode": "longform-sections:plan-json-schema-primary",
+  "generationSections": [
+    {
+      "label": "opening",
+      "keyIdea": null,
+      "wordCount": 225,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "160–260",
+      "softRange": "140–280"
+    },
+    {
+      "label": "idea-1",
+      "keyIdea": "تغییر از حالت‌های واعظ، دادستان و سیاستمدار به حالت دانشمند برای جستجوی حقیقت",
+      "wordCount": 336,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-2",
+      "keyIdea": "هوش بالا می‌تواند مانعی برای بازنگری باشد زیرا باعث توجیه بهتر باورهای غلط می‌شود",
+      "wordCount": 359,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-3",
+      "keyIdea": "تفکیک هویت شخصی از باورها برای انعطاف‌پذیری بیشتر در تغییر عقیده",
+      "wordCount": 323,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-4",
+      "keyIdea": "تواضع فکری به معنای شناخت محدودیت‌های دانش خود و استقبال از اشتباهات",
+      "wordCount": 336,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-5",
+      "keyIdea": "استفاده از کنجکاوی و پرسشگری به جای بحث‌های تهاجمی برای متقاعدسازی دیگران",
+      "wordCount": 344,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "closing",
+      "keyIdea": null,
+      "wordCount": 264,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "180–300",
+      "softRange": "160–320"
+    }
+  ],
+  "rightsMode": "web-research-only"
+}

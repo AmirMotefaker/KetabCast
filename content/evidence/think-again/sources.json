@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "provider": "gemini-source-pack",
+  "model": "gemini-3.1-flash-lite",
+  "sources": [
+    {
+      "kind": "official-seed",
+      "title": "Think Again, the latest book from Adam Grant",
+      "url": "https://adamgrant.net/book/think-again/"
+    },
+    {
+      "kind": "official-seed",
+      "title": "Think Again by Adam Grant: 9781984878120 | PenguinRandomHouse.com: Books",
+      "url": "https://www.penguinrandomhouse.com/books/607660/think-again-by-adam-grant/"
+    },
+    {
+      "kind": "legal-metadata",
+      "title": "Open Library",
+      "url": "https://openlibrary.org/search.json?title=Think+Again&author=Adam+Grant&limit=5&fields=key%2Ctitle%2Cauthor_name%2Cfirst_publish_year%2Cisbn%2Cedition_count%2Cpublisher%2Clanguage"
+    }
+  ]
+}

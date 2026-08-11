@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "detectedLanguage": "fa",
+  "languageProbability": 1,
+  "model": "small",
+  "charSimilarity": 0.8193,
+  "tokenF1": 0.4611,
+  "score": 0.8193,
+  "threshold": 0.6,
+  "pass": true
+}

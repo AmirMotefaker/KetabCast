@@ -1,0 +1,15 @@
+{
+  "episodeId": "leading-teams-ep1",
+  "bookSlug": "leading-teams",
+  "objectKey": "episodes/leading-teams/leading-teams-ep1-v1.mp3",
+  "assetName": "leading-teams-ep1-v1.mp3",
+  "publicUrl": "https://github.com/AmirMotefaker/KetabCast/releases/download/media-v0.2.0-beta.5/leading-teams-ep1-v1.mp3",
+  "releaseTag": "media-v0.2.0-beta.5",
+  "releaseUrl": "https://github.com/AmirMotefaker/KetabCast/releases/tag/media-v0.2.0-beta.5",
+  "assetId": 510365408,
+  "mimeType": "audio/mpeg",
+  "bytes": 9158680,
+  "sha256": "4e03cbd268cd5507277eaf6507a967a5ab649c5f8703df2dce3be595d9815318",
+  "githubDigest": "sha256:4e03cbd268cd5507277eaf6507a967a5ab649c5f8703df2dce3be595d9815318",
+  "verified": true
+}

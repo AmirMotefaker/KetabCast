@@ -1,0 +1,104 @@
+{
+  "pass": true,
+  "wordCount": 2228,
+  "keyIdeaCount": 5,
+  "sourceCount": 2,
+  "checks": [
+    {
+      "name": "word-count",
+      "pass": true,
+      "detail": "Expected 1500–2500 safety range; got 2228."
+    },
+    {
+      "name": "key-ideas",
+      "pass": true,
+      "detail": "Expected 4–6; got 5."
+    },
+    {
+      "name": "source-count",
+      "pass": true,
+      "detail": "Expected at least 2 source records; got 2."
+    },
+    {
+      "name": "no-urls-in-transcript",
+      "pass": true,
+      "detail": "No URL found."
+    }
+  ],
+  "provider": "gemini",
+  "model": "gemini-3.1-flash-lite",
+  "structuredMode": "longform-sections:plan-json-schema-primary",
+  "generationSections": [
+    {
+      "label": "opening",
+      "keyIdea": null,
+      "wordCount": 234,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "160–260",
+      "softRange": "140–280"
+    },
+    {
+      "label": "idea-1",
+      "keyIdea": "رهبری موثر به معنای ایجاد بستری است که تیم بتواند خود را مدیریت کند.",
+      "wordCount": 329,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-2",
+      "keyIdea": "تیم باید یک واحد پایدار با مرزهای مشخص و اعضای ثابت باشد.",
+      "wordCount": 354,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-3",
+      "keyIdea": "داشتن یک هدف جذاب و جهت‌گیری شفاف برای انگیزش تیم حیاتی است.",
+      "wordCount": 348,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-4",
+      "keyIdea": "ساختار داخلی تیم باید به گونه‌ای طراحی شود که کارایی را تسهیل کند نه محدود.",
+      "wordCount": 356,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "idea-5",
+      "keyIdea": "رهبر باید منابع و حمایت‌های لازم را از سازمان برای تیم فراهم کند.",
+      "wordCount": 343,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "260–360",
+      "softRange": "240–380"
+    },
+    {
+      "label": "closing",
+      "keyIdea": null,
+      "wordCount": 264,
+      "attempts": 1,
+      "selectedAttempt": 1,
+      "acceptance": "strict",
+      "strictRange": "180–300",
+      "softRange": "160–320"
+    }
+  ],
+  "rightsMode": "web-research-only"
+}
