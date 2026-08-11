@@ -41,6 +41,68 @@
         "Cal Newport Deep Work interviews four rules concentration",
         "Deep Work reputable review key concepts deliberate focus"
       ]
+    },
+    {
+      "slug": "think-again",
+      "episodeId": "think-again-ep1",
+      "title": "Think Again",
+      "titleFa": "دوباره فکر کن",
+      "author": "Adam Grant",
+      "authorFa": "آدام گرانت",
+      "language": "en",
+      "outputLanguage": "fa-IR",
+      "rightsMode": "web-research-only",
+      "objectKey": "episodes/think-again/think-again-ep1-v1.mp3",
+      "officialSources": [
+        "https://adamgrant.net/book/think-again/",
+        "https://www.penguinrandomhouse.com/books/607660/think-again-by-adam-grant/"
+      ],
+      "searchQueries": [
+        "Think Again Adam Grant official rethinking unlearning intellectual humility",
+        "Adam Grant Think Again interviews rethink assumptions learning",
+        "Think Again reputable review core ideas rethinking"
+      ]
+    },
+    {
+      "slug": "zero-to-one",
+      "episodeId": "zero-to-one-ep1",
+      "title": "Zero to One",
+      "titleFa": "صفر به یک",
+      "author": "Peter Thiel with Blake Masters",
+      "authorFa": "پیتر تیل و بلیک مسترز",
+      "language": "en",
+      "outputLanguage": "fa-IR",
+      "rightsMode": "web-research-only",
+      "objectKey": "episodes/zero-to-one/zero-to-one-ep1-v1.mp3",
+      "officialSources": [
+        "https://www.penguinrandomhouse.com/books/234730/zero-to-one-by-peter-thiel-with-blake-masters/",
+        "https://www.penguin.co.uk/books/419711/zero-to-one-by-masters-peter-thiel-with-blake/9780753555200"
+      ],
+      "searchQueries": [
+        "Zero to One Peter Thiel Blake Masters official innovation monopoly secrets",
+        "Peter Thiel Zero to One interviews startups progress competition",
+        "Zero to One reputable review core concepts startups"
+      ]
+    },
+    {
+      "slug": "leading-teams",
+      "episodeId": "leading-teams-ep1",
+      "title": "Leading Teams",
+      "titleFa": "تیم ایدئال",
+      "author": "J. Richard Hackman",
+      "authorFa": "ریچارد هکمن",
+      "language": "en",
+      "outputLanguage": "fa-IR",
+      "rightsMode": "web-research-only",
+      "objectKey": "episodes/leading-teams/leading-teams-ep1-v1.mp3",
+      "officialSources": [
+        "https://store.hbr.org/product/leading-teams-setting-the-stage-for-great-performances/3332"
+      ],
+      "searchQueries": [
+        "Leading Teams Richard Hackman five conditions real team compelling direction enabling structure supportive context coaching",
+        "Richard Hackman Leading Teams interviews team effectiveness",
+        "Leading Teams Hackman reputable review team design"
+      ]
     }
   ]
 }

@@ -8,7 +8,7 @@ on:
         required: true
         default: all
         type: choice
-        options: [all, atomic-habits, deep-work]
+        options: [all, atomic-habits, deep-work, think-again, zero-to-one, leading-teams]
       stage:
         description: Highest stage to execute
         required: true
@@ -18,7 +18,7 @@ on:
       release_tag:
         description: Exact code release tag for publish stage
         required: true
-        default: v0.2.0-beta.1
+        default: v0.2.0-beta.3
         type: string
 
 permissions:
@@ -176,7 +176,7 @@ jobs:
           . .venv/bin/activate
 
           if [[ "${{ inputs.slug }}" == "all" ]]; then
-            SLUGS="atomic-habits deep-work"
+            SLUGS="atomic-habits deep-work think-again zero-to-one leading-teams"
           else
             SLUGS="${{ inputs.slug }}"
           fi
@@ -208,7 +208,7 @@ jobs:
             --out .factory-output/audio-ingest.local.json
 
           if [[ "${{ inputs.slug }}" == "all" ]]; then
-            EXPECTED_COUNT=2
+            EXPECTED_COUNT=5
           else
             EXPECTED_COUNT=1
           fi

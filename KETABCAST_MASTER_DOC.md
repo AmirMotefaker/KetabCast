@@ -17,7 +17,7 @@
 - **v0.2.0-beta.2 — Zobdino Brand Refresh** ✅ برند فعال محصول **Zobdino / زبدینو** است و GitHub/README/About/UI metadata به‌روزرسانی می‌شوند.
 - دامنه **zobdino.ir** ثبت شده؛ DNS/HTTPS/custom-domain cutover milestone مستقل بعدی است.
 - Voice Review نهایی Sulafat/Schedar باز است و evidence/transcript beta.1 تا promotion دقیق فایل جدید دست‌کاری نمی‌شود.
-- هدف MVP: **۲ از ۵ اپیزود واقعی**؛ سه عنوان بعدی هنوز انتخاب نشده‌اند.
+- هدف MVP: **۲ از ۵ اپیزود واقعی**؛ سه عنوان بعدی انتخاب شده‌اند: دوباره فکر کن، صفر به یک و تیم ایدئال.
 
 هدف این سند: تعریف کامل محصول تا نسخه ۱.۰ (Production Platform) به‌طوری‌که هر AI Agent با خواندن این فایل بتواند بدون پرسیدن سؤال از صفر تا صد کار را جلو ببرد.
 
@@ -329,6 +329,7 @@ Next.js App Router, TS, Tailwind v4, تم تاریک/بنفش, RTL/وزیرمت�
 - [x] Gemini TTS free-tier request-budget hotfix: 8 planned / 10 hard cap (v0.2.0-alpha.12.1)
 - [x] Public beta launch with 2 exact reviewed real-audio GitHub Release Assets (v0.2.0-beta.1)
 - [x] Zobdino public brand refresh: README, About, active UI metadata and GitHub profile (v0.2.0-beta.2)
+- [x] Five-book MVP catalog + Discovery UX + factory support: Think Again، Zero to One، تیم ایدئال (v0.2.0-beta.3)
 - [ ] یکپارچه‌سازی پلیر با فایل صوتی واقعی + verified GitHub Release Asset URL (R2 اختیاری برای آینده)
 - [x] Progress/Seek، سرعت پخش، loading/error state و a11y پلیر (`v0.2.0-alpha.1`)
 - [ ] دانلود/آفلاین واقعی پس از ingest فایل‌های production
