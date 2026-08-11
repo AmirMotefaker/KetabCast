@@ -1,0 +1,347 @@
+name: Zobdino Dual-Voice Production Batch
+
+on:
+  workflow_dispatch:
+    inputs:
+      batch:
+        description: Free-tier-safe two-voice batch
+        required: true
+        default: batch-a
+        type: choice
+        options:
+          - batch-a
+          - batch-b
+          - batch-c
+      tracking_issue:
+        description: GitHub Issue number for evidence comments
+        required: true
+        default: "8"
+        type: string
+      media_tag:
+        description: Immutable media tag shared by all three batches
+        required: true
+        default: media-dual-v0.2.0-beta.6
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+  issues: write
+
+concurrency:
+  group: zobdino-dual-voice-production
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_TTS_MODEL: ${{ vars.GEMINI_TTS_MODEL || 'gemini-3.1-flash-tts-preview' }}
+
+    steps:
+      - name: Checkout exact dispatch ref
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate repository and dual-voice contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          npm run check:text
+          npm run check:episodes
+
+          node scripts/dual-voice-render.mjs \
+            --mode validate \
+            --batch "${{ inputs.batch }}" \
+            --out .dual-voice
+
+      - name: Validate Gemini TTS secret
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [[ -n "$GEMINI_API_KEY" ]] || {
+            echo "::error::GEMINI_API_KEY is required."
+            exit 1
+          }
+
+      - name: Install FFmpeg and faster-whisper
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+
+          python3 -m venv .venv
+          . .venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install faster-whisper==1.2.1
+
+      - name: Generate selected Sulafat and Schedar variants
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node scripts/dual-voice-render.mjs \
+            --mode generate \
+            --batch "${{ inputs.batch }}" \
+            --out .dual-voice
+
+      - name: Round-trip QA every dry narration
+        shell: bash
+        run: |
+          set -euo pipefail
+          . .venv/bin/activate
+
+          while IFS=$'\t' read -r SLUG ROLE DRY; do
+            SCRIPT=".dual-voice/$SLUG/script.display.fa.txt"
+            QA=".dual-voice/$SLUG/$ROLE/audio-qa.json"
+            QA_TEXT=".dual-voice/$SLUG/$ROLE/audio-qa-transcript.txt"
+
+            python scripts/audio-qa.py \
+              --audio ".dual-voice/$DRY" \
+              --script "$SCRIPT" \
+              --out "$QA" \
+              --transcript-out "$QA_TEXT" \
+              --model small \
+              --threshold 0.60
+          done < <(
+            jq -r \
+              '.assets[] | [.bookSlug,.role,.dry.path] | @tsv' \
+              .dual-voice/dual-voice-manifest.json
+          )
+
+      - name: Validate final podcast files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          while IFS=$'\t' read -r SLUG ROLE VOICE PODCAST; do
+            FILE=".dual-voice/$PODCAST"
+
+            test -s "$FILE" || {
+              echo "::error::Missing podcast file: $FILE"
+              exit 1
+            }
+
+            ffprobe -v error "$FILE" >/dev/null
+
+            DURATION="$(
+              ffprobe \
+                -v error \
+                -show_entries format=duration \
+                -of default=noprint_wrappers=1:nokey=1 \
+                "$FILE"
+            )"
+
+            awk -v d="$DURATION" \
+              'BEGIN { exit !(d >= 600 && d <= 1335) }' || {
+                echo "::error::Unexpected duration $DURATION for $FILE"
+                exit 1
+              }
+
+            echo "Podcast PASS: $SLUG / $ROLE / $VOICE / ${DURATION}s"
+          done < <(
+            jq -r \
+              '.assets[] | [.bookSlug,.role,.providerVoice,.podcast.path] | @tsv' \
+              .dual-voice/dual-voice-manifest.json
+          )
+
+      - name: Validate artifact safety
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          FORBIDDEN="$(
+            find .dual-voice -type f \( \
+              -name '.env' -o \
+              -name '.env.*' -o \
+              -iname '*credential*' -o \
+              -iname '*secret*' -o \
+              -iname '*.pem' -o \
+              -iname '*.key' -o \
+              -iname 'id_rsa*' \
+            \) -print
+          )"
+
+          if [[ -n "$FORBIDDEN" ]]; then
+            echo "::error::Dual-voice output contains secret-like files."
+            printf '%s\n' "$FORBIDDEN"
+            exit 1
+          fi
+
+          if grep -R -F -q -- "$GEMINI_API_KEY" .dual-voice; then
+            echo "::error::Dual-voice output contains GEMINI_API_KEY."
+            exit 1
+          fi
+
+      - name: Create or verify immutable dual-voice media release
+        id: media
+        shell: bash
+        env:
+          MEDIA_TAG: ${{ inputs.media_tag }}
+        run: |
+          set -euo pipefail
+
+          SOURCE_SHA="$GITHUB_SHA"
+
+          if git ls-remote --tags origin "refs/tags/$MEDIA_TAG" | grep -q .; then
+            git fetch origin "refs/tags/$MEDIA_TAG:refs/tags/$MEDIA_TAG" --force
+
+            TYPE="$(git cat-file -t "refs/tags/$MEDIA_TAG")"
+            TARGET="$(git rev-list -n 1 "refs/tags/$MEDIA_TAG")"
+
+            [[ "$TYPE" == "tag" ]] || {
+              echo "::error::$MEDIA_TAG is not an annotated tag."
+              exit 1
+            }
+
+            [[ "$TARGET" == "$SOURCE_SHA" ]] || {
+              echo "::error::$MEDIA_TAG target $TARGET != source $SOURCE_SHA"
+              exit 1
+            }
+          else
+            git config user.name "zobdino-content-bot"
+            git config user.email "actions@users.noreply.github.com"
+
+            git tag -a \
+              "$MEDIA_TAG" \
+              "$SOURCE_SHA" \
+              -m "Zobdino dual-voice media — Sulafat + Schedar"
+
+            git push origin "$MEDIA_TAG"
+          fi
+
+          if ! gh release view "$MEDIA_TAG" >/dev/null 2>&1; then
+            gh release create "$MEDIA_TAG" \
+              --verify-tag \
+              --title "Zobdino Dual Voice Media — Sulafat + Schedar" \
+              --notes "Immutable dual-voice media generated from exact source SHA $SOURCE_SHA. Assets are promoted to the product only after all required batch QA and final metadata/player publication." \
+              --prerelease
+          fi
+
+          URL="$(
+            gh release view "$MEDIA_TAG" \
+              --json url \
+              --jq .url
+          )"
+
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Upload and verify immutable podcast assets
+        shell: bash
+        env:
+          MEDIA_TAG: ${{ inputs.media_tag }}
+        run: |
+          set -euo pipefail
+
+          while IFS=$'\t' read -r SLUG ROLE VOICE PODCAST LOCAL_SHA LOCAL_BYTES; do
+            VOICE_SLUG="$(tr '[:upper:]' '[:lower:]' <<<"$VOICE")"
+            ASSET_NAME="$SLUG-$VOICE_SLUG-v1.mp3"
+            FILE=".dual-voice/$PODCAST"
+
+            if gh api \
+              "repos/$GITHUB_REPOSITORY/releases/tags/$MEDIA_TAG" \
+              --jq '.assets[].name' |
+              grep -Fxq "$ASSET_NAME"; then
+              echo "::error::Asset already exists; refusing overwrite: $ASSET_NAME"
+              exit 1
+            fi
+
+            gh release upload "$MEDIA_TAG" \
+              "$FILE#$ASSET_NAME" \
+              --clobber=false
+
+            ROW="$(
+              gh api \
+                "repos/$GITHUB_REPOSITORY/releases/tags/$MEDIA_TAG" \
+                --jq \
+                ".assets[] | select(.name == \"$ASSET_NAME\") | [.size,.digest,.browser_download_url] | @tsv"
+            )"
+
+            IFS=$'\t' read -r REMOTE_BYTES REMOTE_DIGEST REMOTE_URL <<<"$ROW"
+
+            [[ "$REMOTE_BYTES" == "$LOCAL_BYTES" ]] || {
+              echo "::error::$ASSET_NAME byte mismatch"
+              exit 1
+            }
+
+            [[ "$REMOTE_DIGEST" == "sha256:$LOCAL_SHA" ]] || {
+              echo "::error::$ASSET_NAME digest mismatch"
+              exit 1
+            }
+
+            TMP="$(mktemp)"
+            curl --fail --location --silent --show-error \
+              "$REMOTE_URL" \
+              --output "$TMP"
+
+            DOWNLOADED_SHA="$(sha256sum "$TMP" | awk '{print $1}')"
+            DOWNLOADED_BYTES="$(stat -c %s "$TMP")"
+            rm -f "$TMP"
+
+            [[ "$DOWNLOADED_SHA" == "$LOCAL_SHA" ]] || {
+              echo "::error::$ASSET_NAME download-back SHA mismatch"
+              exit 1
+            }
+
+            [[ "$DOWNLOADED_BYTES" == "$LOCAL_BYTES" ]] || {
+              echo "::error::$ASSET_NAME download-back byte mismatch"
+              exit 1
+            }
+
+            echo "Media asset PASS: $ASSET_NAME | sha256:$LOCAL_SHA | $LOCAL_BYTES bytes"
+          done < <(
+            jq -r \
+              '.assets[] | [.bookSlug,.role,.providerVoice,.podcast.path,.podcast.sha256,.podcast.bytes] | @tsv' \
+              .dual-voice/dual-voice-manifest.json
+          )
+
+      - name: Upload dual-voice evidence artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: dual-voice-${{ inputs.batch }}-${{ github.run_id }}
+          path: .dual-voice
+          if-no-files-found: error
+          retention-days: 14
+          include-hidden-files: true
+
+      - name: Record batch evidence
+        shell: bash
+        env:
+          TRACKING_ISSUE: ${{ inputs.tracking_issue }}
+          MEDIA_TAG: ${{ inputs.media_tag }}
+        run: |
+          set -euo pipefail
+
+          PLANNED="$(
+            jq -r '.ttsRequestBudget.plannedSuccessfulRequests' \
+              .dual-voice/dual-voice-manifest.json
+          )"
+
+          USED="$(
+            jq -r '.ttsRequestBudget.networkRequestsUsed' \
+              .dual-voice/dual-voice-manifest.json
+          )"
+
+          gh issue comment "$TRACKING_ISSUE" \
+            --body "[dual-voice-${{ inputs.batch }}] Sulafat + Schedar generation/ASR-QA/media-upload PASS. Source SHA: $GITHUB_SHA | planned TTS requests: $PLANNED | network requests used: $USED | media tag: $MEDIA_TAG | media release: ${{ steps.media.outputs.url }} | workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

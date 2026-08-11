@@ -16,8 +16,8 @@
 - **v0.2.0-beta.1 — Public Audio Beta** ✅ دو اپیزود واقعی Atomic Habits و Deep Work روی GitHub Pages زنده‌اند.
 - **v0.2.0-beta.2 — Zobdino Brand Refresh** ✅ برند فعال محصول **Zobdino / زبدینو** است و GitHub/README/About/UI metadata به‌روزرسانی می‌شوند.
 - دامنه **zobdino.ir** ثبت شده؛ DNS/HTTPS/custom-domain cutover milestone مستقل بعدی است.
-- Voice Review نهایی Sulafat/Schedar باز است و evidence/transcript beta.1 تا promotion دقیق فایل جدید دست‌کاری نمی‌شود.
-- هدف MVP: **۲ از ۵ اپیزود واقعی**؛ سه عنوان بعدی انتخاب شده‌اند: دوباره فکر کن، صفر به یک و تیم ایدئال.
+- v0.2.0-beta.5 ✅ هر ۵ اپیزود production روی GitHub Release Assets و GitHub Pages زنده‌اند؛ Sulafat/Schedar برای Dual-Voice production انتخاب شده‌اند.
+- هدف MVP صوت: **۵ از ۵ اپیزود واقعی ✅**؛ milestone بعدی تولید و promotion دو صدای Sulafat/Schedar بدون حذف Piper fallback است.
 
 هدف این سند: تعریف کامل محصول تا نسخه ۱.۰ (Production Platform) به‌طوری‌که هر AI Agent با خواندن این فایل بتواند بدون پرسیدن سؤال از صفر تا صد کار را جلو ببرد.
 
