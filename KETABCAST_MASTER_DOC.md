@@ -330,6 +330,7 @@ Next.js App Router, TS, Tailwind v4, تم تاریک/بنفش, RTL/وزیرمت�
 - [x] Public beta launch with 2 exact reviewed real-audio GitHub Release Assets (v0.2.0-beta.1)
 - [x] Zobdino public brand refresh: README, About, active UI metadata and GitHub profile (v0.2.0-beta.2)
 - [x] Five-book MVP catalog + Discovery UX + factory support: Think Again، Zero to One، تیم ایدئال (v0.2.0-beta.3)
+- [x] Next-Gen Listening Experience: global audio session, Resume/Continue Listening, Up Next, Sleep Timer, bookmarks, timestamp share, Media Session, keyboard controls and searchable/cue-ready transcript (v0.2.0-beta.4)
 - [ ] یکپارچه‌سازی پلیر با فایل صوتی واقعی + verified GitHub Release Asset URL (R2 اختیاری برای آینده)
 - [x] Progress/Seek، سرعت پخش، loading/error state و a11y پلیر (`v0.2.0-alpha.1`)
 - [ ] دانلود/آفلاین واقعی پس از ingest فایل‌های production

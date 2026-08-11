@@ -32,7 +32,7 @@
 
 ## وضعیت فعلی
 
-**نسخه عمومی:** `v0.2.0-beta.3`
+**نسخه عمومی:** `v0.2.0-beta.4`
 
 | بخش | وضعیت |
 |---|---|
@@ -175,6 +175,7 @@ Local-only progress، milestone تمام‌شده محسوب نمی‌شود.
 - [x] دو اپیزود production با GitHub Release Assets
 - [x] برند نهایی **Zobdino / زبدینو**
 - [x] انتخاب و اضافه‌شدن سه عنوان بعدی MVP به catalog و factory: Think Again، Zero to One، تیم ایدئال
+- [x] Next-Gen Listening: Global Mini Player، Resume، Queue/Autoplay، Sleep Timer، Bookmark، timestamp share، Media Session و Transcript Search (v0.2.0-beta.4)
 - [ ] اتصال `zobdino.ir` + HTTPS
 - [ ] Voice Review نهایی Sulafat / Schedar
 - [ ] promotion دقیق فایل‌های صوتی review‌شده

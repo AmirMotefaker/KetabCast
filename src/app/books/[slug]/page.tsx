@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { Clock3, Headphones, LoaderCircle, Sparkles } from "lucide-react";
 
 import AudioPlayer from "@/components/AudioPlayer";
+import TranscriptPanel from "@/components/player/TranscriptPanel";
 import { books } from "@/lib/books";
 import { episodes } from "@/lib/episodes";
 
@@ -76,7 +77,10 @@ export default async function BookPage({
       </section>
 
       {episode ? (
-        <section className="mb-12 rounded-3xl border border-gray-800 bg-surface/50 p-5 md:p-8">
+        <section
+          id="player"
+          className="mb-12 rounded-3xl border border-gray-800 bg-surface/50 p-5 md:p-8"
+        >
           <div className="mb-6">
             <p className="text-sm font-bold text-accent">اپیزود زبدینو</p>
             <h2 className="mt-2 text-2xl font-extrabold">{episode.title}</h2>
@@ -129,17 +133,7 @@ export default async function BookPage({
         </section>
       )}
 
-      {episode && (
-        <section className="rounded-3xl border border-gray-800 bg-surface/50 p-6 md:p-9">
-          <div className="mb-6">
-            <p className="text-sm font-bold text-accent">قابل مطالعه</p>
-            <h2 className="mt-2 text-3xl font-extrabold">متن اپیزود</h2>
-          </div>
-          <p className="whitespace-pre-line text-lg leading-10 text-gray-300">
-            {episode.transcript}
-          </p>
-        </section>
-      )}
+      {episode && <TranscriptPanel episode={episode} />}
     </div>
   );
 }
