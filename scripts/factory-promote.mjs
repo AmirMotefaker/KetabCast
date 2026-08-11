@@ -1,6 +1,8 @@
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
+import { resolveFactorySlugs } from "./factory-selection.mjs";
+
 function parseArgs(argv) {
   const result = {};
   for (let index = 0; index < argv.length; index += 1) {
@@ -41,10 +43,7 @@ const catalog = JSON.parse(
   await readFile("content/factory/books.json", "utf8"),
 );
 
-const slugs =
-  args.slug === "all"
-    ? catalog.books.map((book) => book.slug)
-    : [args.slug];
+const slugs = resolveFactorySlugs(catalog, args.slug);
 
 for (const slug of slugs) {
   const book = catalog.books.find((entry) => entry.slug === slug);

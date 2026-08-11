@@ -5,6 +5,7 @@ import {
   buildSourcePack,
   loadFactoryCatalog,
 } from "./content-source-pack.mjs";
+import { resolveFactoryBooks } from "./factory-selection.mjs";
 
 const GEMINI_RESEARCH_MODEL =
   process.env.GEMINI_RESEARCH_MODEL?.trim() || "gemini-3.1-flash-lite";
@@ -1012,13 +1013,7 @@ async function main() {
   }
 
   const catalog = await loadFactoryCatalog();
-  const books =
-    requestedSlug === "all"
-      ? catalog.books
-      : catalog.books.filter((book) => book.slug === requestedSlug);
-  if (books.length === 0) {
-    throw new Error(`Unknown book slug: ${requestedSlug}`);
-  }
+  const books = resolveFactoryBooks(catalog, requestedSlug);
 
   const episodeIds = new Set();
   for (const book of catalog.books) {
