@@ -18,7 +18,7 @@ const TTS_RESPONSE_FORMAT = Object.freeze({ type: "audio" });
 const PCM_SAMPLE_RATE = 24000;
 const PCM_CHANNELS = 1;
 const MAX_TTS_NETWORK_REQUESTS = 10;
-const MIN_TTS_REQUEST_INTERVAL_MS = 7000;
+const MIN_TTS_REQUEST_INTERVAL_MS = 12000;
 const DEFAULT_TRANSIENT_429_DELAY_MS = 30000;
 const MAX_TRANSIENT_RETRY_DELAY_MS = 120000;
 
@@ -508,6 +508,92 @@ function reserveTtsNetworkRequest(plannedRequests) {
   ttsNetworkRequests += 1;
 }
 
+const MAX_TTS_ATTEMPTS_PER_CHUNK = 3;
+const RETRYABLE_TTS_STATUS = new Set([
+  408,
+  429,
+  500,
+  502,
+  503,
+  504,
+]);
+const BASE_TRANSIENT_BACKOFF_MS = 6000;
+const MAX_TRANSIENT_BACKOFF_MS = 30000;
+
+function transientBackoffMs(attempt) {
+  const exponent = Math.max(0, attempt - 1);
+  const base = Math.min(
+    BASE_TRANSIENT_BACKOFF_MS * (2 ** exponent),
+    MAX_TRANSIENT_BACKOFF_MS,
+  );
+  const jitter = Math.floor(Math.random() * 1001);
+
+  return Math.min(
+    base + jitter,
+    MAX_TRANSIENT_BACKOFF_MS,
+  );
+}
+
+function retryDelayForStatus(status, quota, attempt) {
+  if (status === 429) {
+    const hinted =
+      quota?.retryDelayMs ??
+      DEFAULT_TRANSIENT_429_DELAY_MS;
+
+    return Math.min(
+      Math.max(
+        hinted + 1500 + Math.floor(Math.random() * 1001),
+        MIN_TTS_REQUEST_INTERVAL_MS,
+      ),
+      MAX_TRANSIENT_RETRY_DELAY_MS,
+    );
+  }
+
+  return transientBackoffMs(attempt);
+}
+
+function validateRetryPolicy() {
+  if (MAX_TTS_ATTEMPTS_PER_CHUNK !== 3) {
+    throw new Error(
+      "Retry policy attempt-count self-test failed.",
+    );
+  }
+
+  for (const status of [408, 429, 500, 502, 503, 504]) {
+    if (!RETRYABLE_TTS_STATUS.has(status)) {
+      throw new Error(
+        `Retry policy missing HTTP ${status}.`,
+      );
+    }
+  }
+
+  for (const status of [400, 401, 403, 404, 422]) {
+    if (RETRYABLE_TTS_STATUS.has(status)) {
+      throw new Error(
+        `Retry policy incorrectly retries HTTP ${status}.`,
+      );
+    }
+  }
+
+  if (MIN_TTS_REQUEST_INTERVAL_MS < 12000) {
+    throw new Error(
+      "TTS pacing self-test failed; expected >=12 seconds.",
+    );
+  }
+
+  if (MAX_TTS_NETWORK_REQUESTS !== 10) {
+    throw new Error(
+      "TTS network hard-cap self-test failed.",
+    );
+  }
+
+  console.log(
+    "Dual-voice retry-policy PASS: " +
+    "3 attempts/chunk, 408/429/5xx retryable, " +
+    "12s pacing, hard cap 10.",
+  );
+}
+
 async function callTts(apiKey, voice, prompt, plannedRequests) {
   const body = {
     model: MODEL,
@@ -523,12 +609,19 @@ async function callTts(apiKey, voice, prompt, plannedRequests) {
 
   let lastError = null;
 
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  for (
+    let attempt = 1;
+    attempt <= MAX_TTS_ATTEMPTS_PER_CHUNK;
+    attempt += 1
+  ) {
     await paceTtsRequest();
     reserveTtsNetworkRequest(plannedRequests);
 
+    let response;
+    let responseText;
+
     try {
-      const response = await fetch(url, {
+      response = await fetch(url, {
         method: "POST",
         headers: {
           "x-goog-api-key": apiKey,
@@ -538,80 +631,75 @@ async function callTts(apiKey, voice, prompt, plannedRequests) {
         body: JSON.stringify(body),
       });
 
-      const responseText = await response.text();
+      responseText = await response.text();
+    } catch (error) {
+      lastError = error;
 
-      if (!response.ok) {
-        const quota = parseQuotaDetails(
-          responseText,
-        );
-
-        if (
-          response.status === 429 &&
-          quota.daily
-        ) {
-          throw new Error(
-            "DAILY_TTS_QUOTA_EXHAUSTED: explicit per-day Gemini TTS " +
-            "quota is exhausted. Wait for the daily reset. " +
-            `networkRequestsUsed=${ttsNetworkRequests}. ` +
-            responseText.slice(0, 900),
-          );
-        }
-
-        const error = new Error(
-          `Gemini TTS HTTP ${response.status}: ` +
-          responseText.slice(0, 900),
-        );
-
-        if (
-          response.status === 429 &&
-          attempt < 2
-        ) {
-          const hinted =
-            quota.retryDelayMs ??
-            DEFAULT_TRANSIENT_429_DELAY_MS;
-
-          const waitMs = Math.min(
-            Math.max(
-              hinted + 1500,
-              MIN_TTS_REQUEST_INTERVAL_MS,
-            ),
-            MAX_TRANSIENT_RETRY_DELAY_MS,
-          );
-
-          lastError = error;
-
-          console.log(
-            "Gemini TTS transient 429; " +
-            `retrying after ${(waitMs / 1000).toFixed(1)}s. ` +
-            `networkRequestsUsed=${ttsNetworkRequests}.`,
-          );
-
-          await sleep(waitMs);
-          continue;
-        }
-
-        if (
-          [500, 502, 503, 504].includes(
-            response.status,
-          ) &&
-          attempt < 2
-        ) {
-          lastError = error;
-
-          const waitMs = 6000;
-
-          console.log(
-            `Gemini TTS HTTP ${response.status}; ` +
-            `retrying after ${(waitMs / 1000).toFixed(1)}s.`,
-          );
-
-          await sleep(waitMs);
-          continue;
-        }
-
+      if (attempt >= MAX_TTS_ATTEMPTS_PER_CHUNK) {
         throw error;
       }
 
+      const waitMs = transientBackoffMs(attempt);
+
+      console.log(
+        "Gemini TTS transport/read failure " +
+        `attempt ${attempt}/${MAX_TTS_ATTEMPTS_PER_CHUNK}; ` +
+        `retrying after ${(waitMs / 1000).toFixed(1)}s. ` +
+        `networkRequestsUsed=${ttsNetworkRequests}. ` +
+        String(error?.message ?? error).slice(0, 300),
+      );
+
+      await sleep(waitMs);
+      continue;
+    }
+
+    if (!response.ok) {
+      const quota = parseQuotaDetails(responseText);
+
+      if (
+        response.status === 429 &&
+        quota.daily
+      ) {
+        throw new Error(
+          "DAILY_TTS_QUOTA_EXHAUSTED: explicit per-day Gemini TTS " +
+          "quota is exhausted. Wait for the daily reset. " +
+          `networkRequestsUsed=${ttsNetworkRequests}. ` +
+          responseText.slice(0, 900),
+        );
+      }
+
+      const error = new Error(
+        `Gemini TTS HTTP ${response.status}: ` +
+        responseText.slice(0, 900),
+      );
+
+      lastError = error;
+
+      if (
+        RETRYABLE_TTS_STATUS.has(response.status) &&
+        attempt < MAX_TTS_ATTEMPTS_PER_CHUNK
+      ) {
+        const waitMs = retryDelayForStatus(
+          response.status,
+          quota,
+          attempt,
+        );
+
+        console.log(
+          `Gemini TTS retryable HTTP ${response.status}; ` +
+          `attempt ${attempt}/${MAX_TTS_ATTEMPTS_PER_CHUNK}; ` +
+          `retrying after ${(waitMs / 1000).toFixed(1)}s. ` +
+          `networkRequestsUsed=${ttsNetworkRequests}.`,
+        );
+
+        await sleep(waitMs);
+        continue;
+      }
+
+      throw error;
+    }
+
+    try {
       const parsed = JSON.parse(responseText);
       const audio =
         findAudio(parsed.output_audio) ??
@@ -643,25 +731,30 @@ async function callTts(apiKey, voice, prompt, plannedRequests) {
     } catch (error) {
       lastError = error;
 
-      if (
-        String(error?.message ?? error).includes(
-          "DAILY_TTS_QUOTA_EXHAUSTED",
-        ) ||
-        String(error?.message ?? error).includes(
-          "TTS_REQUEST_BUDGET_EXHAUSTED",
-        )
-      ) {
+      if (attempt >= MAX_TTS_ATTEMPTS_PER_CHUNK) {
         throw error;
       }
 
-      if (attempt < 2) {
-        await sleep(3000);
-      }
+      const waitMs = transientBackoffMs(attempt);
+
+      console.log(
+        "Gemini TTS provider-response failure " +
+        `attempt ${attempt}/${MAX_TTS_ATTEMPTS_PER_CHUNK}; ` +
+        `retrying after ${(waitMs / 1000).toFixed(1)}s. ` +
+        `networkRequestsUsed=${ttsNetworkRequests}. ` +
+        String(error?.message ?? error).slice(0, 300),
+      );
+
+      await sleep(waitMs);
     }
   }
 
-  throw lastError;
+  throw (
+    lastError ??
+    new Error("Gemini TTS retry loop exhausted without a result.")
+  );
 }
+
 async function providerToWav(generated, wavFile, tempFile) {
   const mime = String(generated.mimeType ?? "").toLowerCase();
 
@@ -959,6 +1052,7 @@ async function main() {
 
   validateSelection(selection, lexicon);
   validateRateLimitClassifier();
+  validateRetryPolicy();
 
   const selectedEpisodes = slugs.map((slug) => {
     const episode = episodes.find((item) => item.bookSlug === slug);
