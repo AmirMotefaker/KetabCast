@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import "./globals.css";
-import Header from "@/components/Header";
+
 import Footer from "@/components/Footer";
+import Header from "@/components/Header";
+import GlobalMiniPlayer from "@/components/player/GlobalMiniPlayer";
+import PlayerProvider from "@/components/player/PlayerProvider";
+
+import "./globals.css";
 
 export const metadata: Metadata = {
   title: "زبدینو | خلاصه هوشمند کتاب با هوش مصنوعی",
@@ -24,9 +28,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="fa" dir="rtl">
       <body className="bg-background text-gray-100 antialiased">
-        <Header />
-        <main className="min-h-screen">{children}</main>
-        <Footer />
+        <PlayerProvider>
+          <Header />
+          <main className="min-h-screen pb-28 md:pb-32">{children}</main>
+          <Footer />
+          <GlobalMiniPlayer />
+        </PlayerProvider>
       </body>
     </html>
   );

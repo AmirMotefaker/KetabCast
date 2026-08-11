@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import BookCard from "@/components/BookCard";
 import Hero from "@/components/Hero";
+import ContinueListening from "@/components/player/ContinueListening";
 import { books } from "@/lib/books";
 import { episodes } from "@/lib/episodes";
 
@@ -36,6 +37,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <ContinueListening />
 
       <section className="mx-auto max-w-6xl px-4 py-16">
         <div className="mb-10 flex items-end justify-between gap-4">
