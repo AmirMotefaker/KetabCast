@@ -23,3 +23,14 @@ artistic soundtrack.
 
 Voice Lab artifacts are review material only and cannot promote production
 episode metadata.
+
+## Gemini TTS REST audio contract
+
+v0.2.0-alpha.11.1 follows the current Interactions API contract:
+response_format is exactly type=audio; no requested mime_type, bit_rate or
+delivery fields. output_audio.data is decoded from Base64. Raw/no-container
+output defaults to 24 kHz mono signed 16-bit PCM and FFmpeg creates review MP3.
+Provider source MIME/sample-rate/channel metadata is retained in the manifest.
+
+This fixes Voice Lab run 31461329382, which failed HTTP 400 before the first
+Sulafat sample.
