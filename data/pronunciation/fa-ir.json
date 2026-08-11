@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "locale": "fa-IR",
+  "entries": [
+    {"display":"کتاب‌کست","spoken":"کتاب کَست","reason":"brand pronunciation"},
+    {"display":"نتایج چشمگیر","spoken":"نتایجِ چشم‌گیر","reason":"prevent rushed phrase"},
+    {"display":"جیمز کلیر","spoken":"جِیمز کلیر","reason":"author name"},
+    {"display":"کال نیوپورت","spoken":"کَل نیوپورت","reason":"author name"},
+    {"display":"تمرکز عمیق","spoken":"تمرکزِ عمیق","reason":"ezafe articulation"}
+  ]
+}
