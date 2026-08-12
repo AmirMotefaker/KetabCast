@@ -16,7 +16,6 @@ const MODEL =
 const API_REVISION = "2026-05-20";
 const TTS_RESPONSE_FORMAT = Object.freeze({
   type: "audio",
-  delivery: "inline",
 });
 const PCM_SAMPLE_RATE = 24000;
 const PCM_CHANNELS = 1;
@@ -755,10 +754,10 @@ function validateInteractionPolling() {
 
   if (
     TTS_RESPONSE_FORMAT.type !== "audio" ||
-    TTS_RESPONSE_FORMAT.delivery !== "inline"
+    Object.hasOwn(TTS_RESPONSE_FORMAT, "delivery")
   ) {
     throw new Error(
-      "Interaction inline-audio delivery self-test failed.",
+      "Interaction TTS audio response-format self-test failed.",
     );
   }
 
@@ -777,7 +776,7 @@ function validateInteractionPolling() {
   console.log(
     "Dual-voice interaction-polling PASS: " +
     "queued/in_progress reuse ID; completed audio extraction; " +
-    "inline delivery; no duplicate generation POST.",
+    "TTS audio response format; no duplicate generation POST.",
   );
 }
 
@@ -1545,11 +1544,10 @@ function validateSelection(selection, lexicon) {
   const keys = Object.keys(TTS_RESPONSE_FORMAT).sort();
 
   if (
-    keys.length !== 2 ||
-    keys[0] !== "delivery" ||
-    keys[1] !== "type" ||
+    keys.length !== 1 ||
+    keys[0] !== "type" ||
     TTS_RESPONSE_FORMAT.type !== "audio" ||
-    TTS_RESPONSE_FORMAT.delivery !== "inline"
+    Object.hasOwn(TTS_RESPONSE_FORMAT, "delivery")
   ) {
     throw new Error("Gemini TTS response_format contract changed.");
   }

@@ -1,5 +1,5 @@
 export const projectStatus = {
-  version: "v0.2.0-beta.5.1.4",
+  version: "v0.2.0-beta.5.1.5",
   productionAudio: {
     ready: 5,
     total: 5,
@@ -12,7 +12,7 @@ export const projectStatus = {
     verifiedVariants: 0,
     targetVariants: 10,
     stage:
-      "Interaction polling منتشر شد؛ Batch A آماده اجرای کنترل‌شده است.",
+      "فرمت خروجی TTS اصلاح شد؛ Batch A آماده اجرای کنترل‌شده است.",
   },
   currentMilestone: {
     title: "Dual-Voice Batch A",

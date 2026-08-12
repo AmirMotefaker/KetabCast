@@ -32,7 +32,7 @@
 
 ## وضعیت فعلی
 
-**نسخه عمومی:** `v0.2.0-beta.5.1.4`
+**نسخه عمومی:** `v0.2.0-beta.5.1.5`
 
 | بخش | وضعیت |
 |---|---|
@@ -43,7 +43,7 @@
 | Deep Work — صوت واقعی | ✅ |
 | GitHub Release Assets + SHA-256 integrity | ✅ |
 | خط تولید research → script → audio → QA | ✅ |
-| صدای دوگانه Sulafat / Schedar | 🧭 Interaction polling منتشر شد؛ Batch A آماده اجرای کنترل‌شده؛ ۰/۱۰ variant verified |
+| صدای دوگانه Sulafat / Schedar | 🔧 TTS audio response format اصلاح شد؛ Batch A آماده اجرای کنترل‌شده؛ ۰/۱۰ variant verified |
 | هدف MVP | **۵ از ۵ اپیزود با صوت production؛ Dual Voice مرحله بعد** |
 | دامنه `zobdino.ir` | ثبت شده؛ اتصال DNS/HTTPS در milestone جدا |
 
