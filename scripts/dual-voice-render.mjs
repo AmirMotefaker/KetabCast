@@ -609,6 +609,7 @@ function validateRetryPolicy() {
 const INTERACTION_POLL_INTERVAL_MS = 5000;
 const INTERACTION_POLL_TIMEOUT_MS = 15 * 60 * 1000;
 const MAX_INTERACTION_GET_ATTEMPTS = 6;
+const MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS = 6;
 const INTERACTION_PENDING_STATUSES = new Set([
   "queued",
   "in_progress",
@@ -634,6 +635,28 @@ function interactionId(value) {
 function interactionIsPending(value) {
   return INTERACTION_PENDING_STATUSES.has(
     interactionStatus(value),
+  );
+}
+
+function interactionNeedsSameIdPoll(
+  value,
+  completedWithoutAudioPolls = 0,
+) {
+  const status = interactionStatus(value);
+  const id = interactionId(value);
+
+  if (!id) {
+    return false;
+  }
+
+  if (INTERACTION_PENDING_STATUSES.has(status)) {
+    return true;
+  }
+
+  return (
+    status === "completed" &&
+    completedWithoutAudioPolls <
+      MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS
   );
 }
 
@@ -682,6 +705,11 @@ function validateInteractionPolling() {
     status: "in_progress",
     steps: [],
   };
+  const completedWithoutAudio = {
+    id: "interaction-materializing",
+    status: "completed",
+    steps: [],
+  };
   const completedData = {
     id: "interaction-data",
     status: "completed",
@@ -699,6 +727,10 @@ function validateInteractionPolling() {
         ],
       },
     ],
+  };
+  const completedMaterialized = {
+    ...completedData,
+    id: "interaction-materializing",
   };
   const completedUri = {
     id: "interaction-uri",
@@ -727,14 +759,37 @@ function validateInteractionPolling() {
   }
 
   const dataAudio = findAudio(completedData);
+  const materializedAudio = findAudio(completedMaterialized);
   const uriAudio = findAudio(completedUri);
 
   if (
     dataAudio?.data !== "AQIDBA==" ||
+    materializedAudio?.data !== "AQIDBA==" ||
     !uriAudio?.uri
   ) {
     throw new Error(
       "Interaction completed-audio extraction self-test failed.",
+    );
+  }
+
+  if (
+    findAudio(completedWithoutAudio) ||
+    !interactionNeedsSameIdPoll(completedWithoutAudio, 0) ||
+    interactionNeedsSameIdPoll(
+      completedWithoutAudio,
+      MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS,
+    ) ||
+    interactionId(completedWithoutAudio) !==
+      interactionId(completedMaterialized)
+  ) {
+    throw new Error(
+      "Interaction completed-audio materialization self-test failed.",
+    );
+  }
+
+  if (MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS !== 6) {
+    throw new Error(
+      "Interaction materialization grace bound self-test failed.",
     );
   }
 
@@ -776,6 +831,7 @@ function validateInteractionPolling() {
   console.log(
     "Dual-voice interaction-polling PASS: " +
     "queued/in_progress reuse ID; completed audio extraction; " +
+    "completed/no-audio same-ID materialization grace; " +
     "TTS audio response format; no duplicate generation POST.",
   );
 }
@@ -1054,6 +1110,7 @@ async function resolveAcceptedInteraction(
   const id = interactionId(interaction);
   const startedAt = Date.now();
   let pollNumber = 0;
+  let completedWithoutAudioPolls = 0;
 
   while (true) {
     const generated = await materializeInteractionAudio(
@@ -1071,9 +1128,32 @@ async function resolveAcceptedInteraction(
       safeInteractionSummaryText(interaction);
 
     if (status === "completed") {
-      throw new Error(
-        `TTS_INTERACTION_COMPLETED_WITHOUT_AUDIO: ${summary}`,
+      if (!id) {
+        throw new Error(
+          `TTS_INTERACTION_COMPLETED_WITHOUT_AUDIO: ${summary}`,
+        );
+      }
+
+      if (
+        completedWithoutAudioPolls >=
+        MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS
+      ) {
+        throw new Error(
+          "TTS_INTERACTION_COMPLETED_WITHOUT_AUDIO: " +
+          `materializationPolls=${completedWithoutAudioPolls}; ` +
+          summary,
+        );
+      }
+
+      completedWithoutAudioPolls += 1;
+
+      console.log(
+        "Gemini TTS interaction completed without audio; " +
+        `same-ID materialization poll ${completedWithoutAudioPolls}/` +
+        `${MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS}; ${summary}`,
       );
+    } else {
+      completedWithoutAudioPolls = 0;
     }
 
     if (INTERACTION_TERMINAL_STATUSES.has(status)) {
@@ -1088,7 +1168,8 @@ async function resolveAcceptedInteraction(
 
     if (
       status &&
-      !INTERACTION_PENDING_STATUSES.has(status)
+      !INTERACTION_PENDING_STATUSES.has(status) &&
+      status !== "completed"
     ) {
       throw new Error(
         `TTS_INTERACTION_UNKNOWN_STATUS: ${summary}`,
@@ -1107,8 +1188,11 @@ async function resolveAcceptedInteraction(
     pollNumber += 1;
 
     if (
-      pollNumber === 1 ||
-      pollNumber % 6 === 0
+      status !== "completed" &&
+      (
+        pollNumber === 1 ||
+        pollNumber % 6 === 0
+      )
     ) {
       console.log(
         `Gemini TTS interaction pending; ` +
