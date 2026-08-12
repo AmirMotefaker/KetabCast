@@ -609,6 +609,7 @@ function validateRetryPolicy() {
 const INTERACTION_POLL_INTERVAL_MS = 5000;
 const INTERACTION_POLL_TIMEOUT_MS = 15 * 60 * 1000;
 const MAX_INTERACTION_GET_ATTEMPTS = 6;
+const MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS = 6;
 const INTERACTION_PENDING_STATUSES = new Set([
   "queued",
   "in_progress",
@@ -634,6 +635,28 @@ function interactionId(value) {
 function interactionIsPending(value) {
   return INTERACTION_PENDING_STATUSES.has(
     interactionStatus(value),
+  );
+}
+
+function interactionNeedsSameIdPoll(
+  value,
+  completedWithoutAudioPolls = 0,
+) {
+  const status = interactionStatus(value);
+  const id = interactionId(value);
+
+  if (!id) {
+    return false;
+  }
+
+  if (INTERACTION_PENDING_STATUSES.has(status)) {
+    return true;
+  }
+
+  return (
+    status === "completed" &&
+    completedWithoutAudioPolls <
+      MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS
   );
 }
 
@@ -682,6 +705,11 @@ function validateInteractionPolling() {
     status: "in_progress",
     steps: [],
   };
+  const completedWithoutAudio = {
+    id: "interaction-materializing",
+    status: "completed",
+    steps: [],
+  };
   const completedData = {
     id: "interaction-data",
     status: "completed",
@@ -699,6 +727,10 @@ function validateInteractionPolling() {
         ],
       },
     ],
+  };
+  const completedMaterialized = {
+    ...completedData,
+    id: "interaction-materializing",
   };
   const completedUri = {
     id: "interaction-uri",
@@ -727,14 +759,37 @@ function validateInteractionPolling() {
   }
 
   const dataAudio = findAudio(completedData);
+  const materializedAudio = findAudio(completedMaterialized);
   const uriAudio = findAudio(completedUri);
 
   if (
     dataAudio?.data !== "AQIDBA==" ||
+    materializedAudio?.data !== "AQIDBA==" ||
     !uriAudio?.uri
   ) {
     throw new Error(
       "Interaction completed-audio extraction self-test failed.",
+    );
+  }
+
+  if (
+    findAudio(completedWithoutAudio) ||
+    !interactionNeedsSameIdPoll(completedWithoutAudio, 0) ||
+    interactionNeedsSameIdPoll(
+      completedWithoutAudio,
+      MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS,
+    ) ||
+    interactionId(completedWithoutAudio) !==
+      interactionId(completedMaterialized)
+  ) {
+    throw new Error(
+      "Interaction completed-audio materialization self-test failed.",
+    );
+  }
+
+  if (MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS !== 6) {
+    throw new Error(
+      "Interaction materialization grace bound self-test failed.",
     );
   }
 
@@ -776,7 +831,195 @@ function validateInteractionPolling() {
   console.log(
     "Dual-voice interaction-polling PASS: " +
     "queued/in_progress reuse ID; completed audio extraction; " +
+    "completed/no-audio same-ID materialization grace; " +
     "TTS audio response format; no duplicate generation POST.",
+  );
+}
+
+async function validateInteractionResolutionRuntime() {
+  const id = "interaction-runtime-materialization";
+  const initial = {
+    id,
+    status: "completed",
+    steps: [],
+  };
+  const audioData = Buffer.alloc(2048, 7).toString("base64");
+
+  let successGetCalls = 0;
+  let successSleepCalls = 0;
+
+  const successful = await resolveAcceptedInteraction(
+    "self-test-key",
+    initial,
+    "Sulafat",
+    {
+      now: () => 0,
+      sleep: async (ms) => {
+        if (ms !== INTERACTION_POLL_INTERVAL_MS) {
+          throw new Error(
+            `Runtime materialization sleep mismatch: ${ms}.`,
+          );
+        }
+        successSleepCalls += 1;
+      },
+      getInteraction: async (
+        apiKey,
+        requestedId,
+        pollNumber,
+      ) => {
+        successGetCalls += 1;
+
+        if (apiKey !== "self-test-key") {
+          throw new Error(
+            "Runtime materialization API-key forwarding failed.",
+          );
+        }
+
+        if (requestedId !== id) {
+          throw new Error(
+            "Runtime materialization changed Interaction ID.",
+          );
+        }
+
+        if (pollNumber !== successGetCalls) {
+          throw new Error(
+            "Runtime materialization poll numbering changed.",
+          );
+        }
+
+        if (successGetCalls === 1) {
+          return {
+            id,
+            status: "completed",
+            steps: [],
+          };
+        }
+
+        return {
+          id,
+          status: "completed",
+          steps: [
+            {
+              type: "model_output",
+              content: [
+                {
+                  type: "audio",
+                  data: audioData,
+                  mime_type: "audio/l16",
+                  sample_rate: PCM_SAMPLE_RATE,
+                  channels: PCM_CHANNELS,
+                },
+              ],
+            },
+          ],
+        };
+      },
+    },
+  );
+
+  if (
+    successGetCalls !== 2 ||
+    successSleepCalls !== 2 ||
+    successful?.buffer?.length !== 2048 ||
+    successful?.mimeType !== "audio/l16"
+  ) {
+    throw new Error(
+      "Runtime materialization success-path self-test failed: " +
+      JSON.stringify({
+        successGetCalls,
+        successSleepCalls,
+        bytes: successful?.buffer?.length ?? null,
+        mimeType: successful?.mimeType ?? null,
+      }),
+    );
+  }
+
+  let failureGetCalls = 0;
+  let failureSleepCalls = 0;
+  let failure = null;
+
+  try {
+    await resolveAcceptedInteraction(
+      "self-test-key",
+      initial,
+      "Schedar",
+      {
+        now: () => 0,
+        sleep: async (ms) => {
+          if (ms !== INTERACTION_POLL_INTERVAL_MS) {
+            throw new Error(
+              `Runtime fail-closed sleep mismatch: ${ms}.`,
+            );
+          }
+          failureSleepCalls += 1;
+        },
+        getInteraction: async (
+          apiKey,
+          requestedId,
+          pollNumber,
+        ) => {
+          failureGetCalls += 1;
+
+          if (apiKey !== "self-test-key") {
+            throw new Error(
+              "Runtime fail-closed API-key forwarding failed.",
+            );
+          }
+
+          if (requestedId !== id) {
+            throw new Error(
+              "Runtime fail-closed changed Interaction ID.",
+            );
+          }
+
+          if (pollNumber !== failureGetCalls) {
+            throw new Error(
+              "Runtime fail-closed poll numbering changed.",
+            );
+          }
+
+          return {
+            id,
+            status: "completed",
+            steps: [],
+          };
+        },
+      },
+    );
+  } catch (error) {
+    failure = error;
+  }
+
+  const failureMessage = String(
+    failure?.message ?? failure ?? "",
+  );
+
+  if (
+    failureGetCalls !==
+      MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS ||
+    failureSleepCalls !==
+      MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS ||
+    !failureMessage.includes(
+      "TTS_INTERACTION_COMPLETED_WITHOUT_AUDIO",
+    ) ||
+    !failureMessage.includes(
+      `materializationPolls=${MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS}`,
+    )
+  ) {
+    throw new Error(
+      "Runtime materialization fail-closed self-test failed: " +
+      JSON.stringify({
+        failureGetCalls,
+        failureSleepCalls,
+        failureMessage,
+      }),
+    );
+  }
+
+  console.log(
+    "Dual-voice runtime materialization PASS: " +
+    "completed/no-audio -> same-ID GET x2 -> audio; " +
+    "persistent no-audio -> same-ID GET x6 -> fail closed.",
   );
 }
 
@@ -1049,14 +1292,29 @@ async function resolveAcceptedInteraction(
   apiKey,
   initialInteraction,
   voice,
+  dependencies = {},
 ) {
+  const materializeAudio =
+    dependencies.materializeInteractionAudio ??
+    materializeInteractionAudio;
+  const fetchInteraction =
+    dependencies.getInteraction ??
+    getInteraction;
+  const wait =
+    dependencies.sleep ??
+    sleep;
+  const now =
+    dependencies.now ??
+    (() => Date.now());
+
   let interaction = initialInteraction;
   const id = interactionId(interaction);
-  const startedAt = Date.now();
+  const startedAt = now();
   let pollNumber = 0;
+  let completedWithoutAudioPolls = 0;
 
   while (true) {
-    const generated = await materializeInteractionAudio(
+    const generated = await materializeAudio(
       apiKey,
       interaction,
       voice,
@@ -1071,8 +1329,29 @@ async function resolveAcceptedInteraction(
       safeInteractionSummaryText(interaction);
 
     if (status === "completed") {
-      throw new Error(
-        `TTS_INTERACTION_COMPLETED_WITHOUT_AUDIO: ${summary}`,
+      if (!id) {
+        throw new Error(
+          `TTS_INTERACTION_COMPLETED_WITHOUT_AUDIO: ${summary}`,
+        );
+      }
+
+      if (
+        completedWithoutAudioPolls >=
+        MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS
+      ) {
+        throw new Error(
+          "TTS_INTERACTION_COMPLETED_WITHOUT_AUDIO: " +
+          `materializationPolls=${completedWithoutAudioPolls}; ` +
+          summary,
+        );
+      }
+
+      completedWithoutAudioPolls += 1;
+
+      console.log(
+        "Gemini TTS interaction completed without audio; " +
+        `same-ID materialization poll ${completedWithoutAudioPolls}/` +
+        `${MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS}; ${summary}`,
       );
     }
 
@@ -1088,7 +1367,8 @@ async function resolveAcceptedInteraction(
 
     if (
       status &&
-      !INTERACTION_PENDING_STATUSES.has(status)
+      !INTERACTION_PENDING_STATUSES.has(status) &&
+      status !== "completed"
     ) {
       throw new Error(
         `TTS_INTERACTION_UNKNOWN_STATUS: ${summary}`,
@@ -1096,7 +1376,7 @@ async function resolveAcceptedInteraction(
     }
 
     if (
-      Date.now() - startedAt >=
+      now() - startedAt >=
       INTERACTION_POLL_TIMEOUT_MS
     ) {
       throw new Error(
@@ -1107,8 +1387,11 @@ async function resolveAcceptedInteraction(
     pollNumber += 1;
 
     if (
-      pollNumber === 1 ||
-      pollNumber % 6 === 0
+      status !== "completed" &&
+      (
+        pollNumber === 1 ||
+        pollNumber % 6 === 0
+      )
     ) {
       console.log(
         `Gemini TTS interaction pending; ` +
@@ -1116,9 +1399,9 @@ async function resolveAcceptedInteraction(
       );
     }
 
-    await sleep(INTERACTION_POLL_INTERVAL_MS);
+    await wait(INTERACTION_POLL_INTERVAL_MS);
 
-    interaction = await getInteraction(
+    interaction = await fetchInteraction(
       apiKey,
       id,
       pollNumber,
@@ -1582,6 +1865,7 @@ async function main() {
   validateRateLimitClassifier();
   validateRetryPolicy();
   validateInteractionPolling();
+  await validateInteractionResolutionRuntime();
 
   const selectedEpisodes = slugs.map((slug) => {
     const episode = episodes.find((item) => item.bookSlug === slug);
