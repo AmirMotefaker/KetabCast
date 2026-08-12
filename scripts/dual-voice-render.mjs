@@ -782,7 +782,11 @@ function validateRetryPolicy() {
 const INTERACTION_POLL_INTERVAL_MS = 5000;
 const INTERACTION_POLL_TIMEOUT_MS = 15 * 60 * 1000;
 const MAX_INTERACTION_GET_ATTEMPTS = 6;
-const MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS = 6;
+const MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS =
+  Math.floor(
+    INTERACTION_POLL_TIMEOUT_MS /
+      INTERACTION_POLL_INTERVAL_MS,
+  );
 const INTERACTION_PENDING_STATUSES = new Set([
   "queued",
   "in_progress",
@@ -960,7 +964,9 @@ function validateInteractionPolling() {
     );
   }
 
-  if (MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS !== 6) {
+  if (
+    MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS !== 180
+  ) {
     throw new Error(
       "Interaction materialization grace bound self-test failed.",
     );
@@ -1060,7 +1066,7 @@ async function validateInteractionResolutionRuntime() {
           );
         }
 
-        if (successGetCalls === 1) {
+        if (successGetCalls < 12) {
           return {
             id,
             status: "completed",
@@ -1091,8 +1097,8 @@ async function validateInteractionResolutionRuntime() {
   );
 
   if (
-    successGetCalls !== 2 ||
-    successSleepCalls !== 2 ||
+    successGetCalls !== 12 ||
+    successSleepCalls !== 12 ||
     successful?.buffer?.length !== 2048 ||
     successful?.mimeType !== "audio/l16"
   ) {
@@ -1191,8 +1197,8 @@ async function validateInteractionResolutionRuntime() {
 
   console.log(
     "Dual-voice runtime materialization PASS: " +
-    "completed/no-audio -> same-ID GET x2 -> audio; " +
-    "persistent no-audio -> same-ID GET x6 -> fail closed.",
+    "completed/no-audio -> same-ID GET x12 -> audio; " +
+    "persistent no-audio -> same-ID GET x180 / 15m -> fail closed.",
   );
 }
 
