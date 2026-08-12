@@ -26,6 +26,7 @@
 - v0.2.0-beta.5.1.6 — Approved Sulafat/Schedar preview روی GitHub Pages منتشر شد؛ این milestone فقط preview UI/assets بود و production episode metadata/Piper را تغییر نداد.
 - v0.2.0-beta.5.1.7 — Gemini completed-Interaction audio materialization grace: completed بدون audio دیگر فوراً fail نمی‌شود؛ همان Interaction ID با GET مستقل و bounded تا ۶ poll برای materialization دنبال می‌شود؛ duplicate POST ممنوع و Batch A هنوز ۰/۱۰ است.
 - v0.2.0-beta.5.1.8 — Gemini TTS content_blocked classifier recovery: prompt با speech-synthesis preamble صریح و transcript markers سخت‌تر شد؛ فقط transcript chunkی که قبلاً در همان run با صدای دیگر موفق شده باشد یک alternate-framing recovery می‌گیرد، سقف recovery دو POST و hard cap کل ۱۰ باقی می‌ماند؛ safety settings و transcript تغییر نمی‌کنند؛ Batch A هنوز ۰/۱۰ است.
+- v0.2.0-beta.5.1.9 — Gemini completed/no-audio long materialization window: Run 31597210578 ثابت کرد سقف ۶ poll (~۳۰s) برای Schedar کافی نیست؛ همان Interaction ID اکنون با GETهای ۵ ثانیه‌ای تا سقف timeout موجود ۱۵ دقیقه (۱۸۰ poll) دنبال می‌شود؛ هیچ generation POST جدیدی پس از accepted ID ساخته نمی‌شود و hard cap=10 / recovery POST budget=2 بدون تغییر می‌ماند؛ Batch A هنوز ۰/۱۰ است.
 
 هدف این سند: تعریف کامل محصول تا نسخه ۱.۰ (Production Platform) به‌طوری‌که هر AI Agent با خواندن این فایل بتواند بدون پرسیدن سؤال از صفر تا صد کار را جلو ببرد.
 
