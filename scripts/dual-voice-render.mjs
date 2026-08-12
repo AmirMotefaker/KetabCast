@@ -484,6 +484,65 @@ function isTtsClassifierContentBlocked(status, responseText) {
   );
 }
 
+function contentBlockedRecoveryEligibleForText({
+  textHash,
+  recoveryPrompt,
+  classifierRecoveryUsed,
+  successfulTextHashes,
+}) {
+  return (
+    !classifierRecoveryUsed &&
+    Boolean(textHash) &&
+    Boolean(recoveryPrompt) &&
+    successfulTextHashes.has(textHash)
+  );
+}
+
+function contentBlockedRecoveryPostsUsed(recoveryState) {
+  const used = Number(recoveryState?.used ?? 0);
+
+  if (
+    !Number.isInteger(used) ||
+    used < 0
+  ) {
+    throw new Error(
+      "TTS_CONTENT_BLOCKED_RECOVERY_STATE_INVALID: " +
+      `used=${String(recoveryState?.used)}`,
+    );
+  }
+
+  return used;
+}
+
+function contentBlockedRecoveryBudgetAvailable(
+  recoveryState,
+) {
+  return (
+    contentBlockedRecoveryPostsUsed(recoveryState) <
+    MAX_CONTENT_BLOCKED_RECOVERY_POSTS
+  );
+}
+
+function reserveContentBlockedRecoveryPost(
+  recoveryState,
+) {
+  const used =
+    contentBlockedRecoveryPostsUsed(recoveryState);
+
+  if (
+    used >= MAX_CONTENT_BLOCKED_RECOVERY_POSTS
+  ) {
+    throw new Error(
+      "TTS_CONTENT_BLOCKED_RECOVERY_BUDGET_EXHAUSTED: " +
+      `recoveryPostsUsed=${used}/` +
+      `${MAX_CONTENT_BLOCKED_RECOVERY_POSTS}`,
+    );
+  }
+
+  recoveryState.used = used + 1;
+  return recoveryState.used;
+}
+
 function canRecoverContentBlocked({
   textHash,
   recoveryPrompt,
@@ -492,12 +551,15 @@ function canRecoverContentBlocked({
   recoveryState,
 }) {
   return (
-    !classifierRecoveryUsed &&
-    Boolean(textHash) &&
-    Boolean(recoveryPrompt) &&
-    successfulTextHashes.has(textHash) &&
-    recoveryState.used <
-      MAX_CONTENT_BLOCKED_RECOVERY_POSTS
+    contentBlockedRecoveryEligibleForText({
+      textHash,
+      recoveryPrompt,
+      classifierRecoveryUsed,
+      successfulTextHashes,
+    }) &&
+    contentBlockedRecoveryBudgetAvailable(
+      recoveryState,
+    )
   );
 }
 
@@ -1332,10 +1394,188 @@ async function validateContentBlockedRecoveryRuntime() {
     );
   }
 
+  const retryBudgetState = { used: 0 };
+  const retryBudgetPostedInputs = [];
+  let retryBudgetFetchCalls = 0;
+  let retryBudgetReservedPosts = 0;
+  let retryBudgetFailure = null;
+
+  try {
+    await callTts(
+      "self-test-key",
+      "Schedar",
+      primaryPrompt,
+      8,
+      {
+        spokenChunkSha256: textHash,
+        recoveryPrompt,
+        successfullySynthesizedTextHashes:
+          new Set([textHash]),
+        contentBlockedRecoveryState:
+          retryBudgetState,
+        paceTtsRequest: async () => {},
+        reserveTtsNetworkRequest: () => {
+          retryBudgetReservedPosts += 1;
+        },
+        sleep: async () => {},
+        fetch: async (_url, request) => {
+          retryBudgetFetchCalls += 1;
+          const postedInput =
+            JSON.parse(
+              String(request?.body ?? "{}"),
+            ).input;
+
+          retryBudgetPostedInputs.push(
+            postedInput,
+          );
+
+          if (retryBudgetFetchCalls === 1) {
+            return {
+              ok: false,
+              status: 400,
+              text: async () =>
+                contentBlockedFixture,
+            };
+          }
+
+          return {
+            ok: false,
+            status: 500,
+            text: async () =>
+              JSON.stringify({
+                error: {
+                  message:
+                    "Temporary provider failure.",
+                  code: "internal",
+                },
+              }),
+          };
+        },
+      },
+    );
+  } catch (error) {
+    retryBudgetFailure = error;
+  }
+
+  const retryBudgetFailureMessage = String(
+    retryBudgetFailure?.message ??
+      retryBudgetFailure ??
+      "",
+  );
+
+  const firstCallRecoveryPosts =
+    retryBudgetPostedInputs.filter(
+      (input) => input === recoveryPrompt,
+    ).length;
+
+  if (
+    retryBudgetFetchCalls !== 3 ||
+    retryBudgetReservedPosts !== 3 ||
+    retryBudgetState.used !== 2 ||
+    retryBudgetPostedInputs[0] !==
+      primaryPrompt ||
+    firstCallRecoveryPosts !== 2 ||
+    !retryBudgetFailureMessage.includes(
+      "Gemini TTS generation POST HTTP 500",
+    )
+  ) {
+    throw new Error(
+      "TTS recovery POST budget retryable-path self-test failed: " +
+      JSON.stringify({
+        retryBudgetFetchCalls,
+        retryBudgetReservedPosts,
+        recoveryPostsUsed:
+          retryBudgetState.used,
+        firstCallRecoveryPosts,
+        retryBudgetFailureMessage,
+      }),
+    );
+  }
+
+  const postBudgetInputs = [];
+  let postBudgetFetchCalls = 0;
+  let postBudgetReservedPosts = 0;
+  let postBudgetFailure = null;
+
+  try {
+    await callTts(
+      "self-test-key",
+      "Schedar",
+      primaryPrompt,
+      8,
+      {
+        spokenChunkSha256: textHash,
+        recoveryPrompt,
+        successfullySynthesizedTextHashes:
+          new Set([textHash]),
+        contentBlockedRecoveryState:
+          retryBudgetState,
+        paceTtsRequest: async () => {},
+        reserveTtsNetworkRequest: () => {
+          postBudgetReservedPosts += 1;
+        },
+        sleep: async () => {},
+        fetch: async (_url, request) => {
+          postBudgetFetchCalls += 1;
+          postBudgetInputs.push(
+            JSON.parse(
+              String(request?.body ?? "{}"),
+            ).input,
+          );
+
+          return {
+            ok: false,
+            status: 400,
+            text: async () =>
+              contentBlockedFixture,
+          };
+        },
+      },
+    );
+  } catch (error) {
+    postBudgetFailure = error;
+  }
+
+  const postBudgetFailureMessage = String(
+    postBudgetFailure?.message ??
+      postBudgetFailure ??
+      "",
+  );
+
+  const allRecoveryPostsSent =
+    firstCallRecoveryPosts +
+    postBudgetInputs.filter(
+      (input) => input === recoveryPrompt,
+    ).length;
+
+  if (
+    postBudgetFetchCalls !== 1 ||
+    postBudgetReservedPosts !== 1 ||
+    postBudgetInputs[0] !== primaryPrompt ||
+    retryBudgetState.used !== 2 ||
+    allRecoveryPostsSent !== 2 ||
+    !postBudgetFailureMessage.includes(
+      "TTS_CONTENT_BLOCKED_RECOVERY_BUDGET_EXHAUSTED",
+    )
+  ) {
+    throw new Error(
+      "TTS third recovery POST refusal self-test failed: " +
+      JSON.stringify({
+        postBudgetFetchCalls,
+        postBudgetReservedPosts,
+        recoveryPostsUsed:
+          retryBudgetState.used,
+        allRecoveryPostsSent,
+        postBudgetFailureMessage,
+      }),
+    );
+  }
+
   console.log(
     "Dual-voice content-blocked recovery PASS: " +
     "explicit TTS preamble; previously synthesized text only; " +
-    "one alternate-framing POST; unseen text fails closed.",
+    "actual recovery POST budget=2 across retryable responses; " +
+    "third recovery POST refused; unseen text fails closed.",
   );
 }
 
@@ -1770,8 +2010,42 @@ async function callTts(
     attempt <= MAX_TTS_ATTEMPTS_PER_CHUNK;
     attempt += 1
   ) {
+    const usingRecoveryPrompt =
+      classifierRecoveryUsed &&
+      Boolean(recoveryPrompt) &&
+      activePrompt === recoveryPrompt;
+
+    if (
+      usingRecoveryPrompt &&
+      !contentBlockedRecoveryBudgetAvailable(
+        recoveryState,
+      )
+    ) {
+      throw new Error(
+        "TTS_CONTENT_BLOCKED_RECOVERY_BUDGET_EXHAUSTED: " +
+        `voice=${voice}; textHash=${textHash || "none"}; ` +
+        `recoveryPostsUsed=${contentBlockedRecoveryPostsUsed(recoveryState)}/` +
+        `${MAX_CONTENT_BLOCKED_RECOVERY_POSTS}; ` +
+        "third recovery POST refused before network request.",
+      );
+    }
+
     await paceRequest();
     reserveRequest(plannedRequests);
+
+    if (usingRecoveryPrompt) {
+      const recoveryPostNumber =
+        reserveContentBlockedRecoveryPost(
+          recoveryState,
+        );
+
+      console.log(
+        "Gemini TTS content_blocked recovery POST; " +
+        `recoveryPostsUsed=${recoveryPostNumber}/` +
+        `${MAX_CONTENT_BLOCKED_RECOVERY_POSTS}; ` +
+        `generationRequestsUsed=${ttsNetworkRequests}.`,
+      );
+    }
 
     const body = {
       model: MODEL,
@@ -1839,6 +2113,29 @@ async function callTts(
           responseText,
         )
       ) {
+        const eligibleForRecovery =
+          contentBlockedRecoveryEligibleForText({
+            textHash,
+            recoveryPrompt,
+            classifierRecoveryUsed,
+            successfulTextHashes,
+          });
+
+        if (
+          eligibleForRecovery &&
+          !contentBlockedRecoveryBudgetAvailable(
+            recoveryState,
+          )
+        ) {
+          throw new Error(
+            "TTS_CONTENT_BLOCKED_RECOVERY_BUDGET_EXHAUSTED: " +
+            `voice=${voice}; textHash=${textHash || "none"}; ` +
+            `recoveryPostsUsed=${contentBlockedRecoveryPostsUsed(recoveryState)}/` +
+            `${MAX_CONTENT_BLOCKED_RECOVERY_POSTS}; ` +
+            "eligible transcript cannot consume a third recovery POST.",
+          );
+        }
+
         if (
           attempt < MAX_TTS_ATTEMPTS_PER_CHUNK &&
           canRecoverContentBlocked({
@@ -1850,13 +2147,12 @@ async function callTts(
           })
         ) {
           classifierRecoveryUsed = true;
-          recoveryState.used += 1;
           activePrompt = recoveryPrompt;
 
           console.log(
             "Gemini TTS content_blocked classifier recovery; " +
             "retrying same transcript with explicit synthesis framing. " +
-            `recovery=${recoveryState.used}/` +
+            `nextRecoveryPost=${contentBlockedRecoveryPostsUsed(recoveryState) + 1}/` +
             `${MAX_CONTENT_BLOCKED_RECOVERY_POSTS}; ` +
             `generationRequestsUsed=${ttsNetworkRequests}.`,
           );
@@ -1868,7 +2164,7 @@ async function callTts(
           "TTS_CONTENT_BLOCKED_NO_SAFE_RECOVERY: " +
           `voice=${voice}; textHash=${textHash || "none"}; ` +
           `recoveryUsed=${classifierRecoveryUsed}; ` +
-          `globalRecoveryPosts=${recoveryState.used}; ` +
+          `globalRecoveryPosts=${contentBlockedRecoveryPostsUsed(recoveryState)}; ` +
           responseText.slice(0, 900),
         );
       }
