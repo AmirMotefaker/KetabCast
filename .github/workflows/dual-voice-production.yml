@@ -24,6 +24,11 @@ on:
         required: true
         default: media-dual-v0.2.0-beta.6
         type: string
+      resume_run_id:
+        description: Optional failed dual-voice run ID to restore as a verified checkpoint
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: write
@@ -97,15 +102,115 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install faster-whisper==1.2.1
 
+      - name: Restore verified failed checkpoint
+        if: ${{ inputs.resume_run_id != '' }}
+        shell: bash
+        env:
+          RESUME_RUN_ID: ${{ inputs.resume_run_id }}
+        run: |
+          set -euo pipefail
+
+          [[ "$RESUME_RUN_ID" =~ ^[0-9]+$ ]] || {
+            echo "::error::resume_run_id must be numeric."
+            exit 1
+          }
+
+          RUN_JSON="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RESUME_RUN_ID")"
+          RUN_EVENT="$(jq -r '.event' <<<"$RUN_JSON")"
+          RUN_CONCLUSION="$(jq -r '.conclusion' <<<"$RUN_JSON")"
+          RUN_PATH="$(jq -r '.path' <<<"$RUN_JSON")"
+          SOURCE_SHA="$(jq -r '.head_sha' <<<"$RUN_JSON")"
+
+          [[ "$RUN_EVENT" == "workflow_dispatch" ]] || {
+            echo "::error::Resume source was not workflow_dispatch."
+            exit 1
+          }
+
+          [[ "$RUN_CONCLUSION" == "failure" ]] || {
+            echo "::error::Resume source run must be failed."
+            exit 1
+          }
+
+          [[ "$RUN_PATH" == ".github/workflows/dual-voice-production.yml" ]] || {
+            echo "::error::Resume source is from a different workflow: $RUN_PATH"
+            exit 1
+          }
+
+          git merge-base --is-ancestor "$SOURCE_SHA" "$GITHUB_SHA" || {
+            echo "::error::Resume source SHA is not an ancestor of current source."
+            exit 1
+          }
+
+          ARTIFACT_NAME="dual-voice-failed-${{ inputs.batch }}-$RESUME_RUN_ID"
+          ARTIFACTS="$(
+            gh api \
+              "repos/$GITHUB_REPOSITORY/actions/runs/$RESUME_RUN_ID/artifacts?per_page=100"
+          )"
+
+          MATCH_COUNT="$(
+            jq \
+              --arg name "$ARTIFACT_NAME" \
+              '[.artifacts[] | select(.name == $name and .expired == false)] | length' \
+              <<<"$ARTIFACTS"
+          )"
+
+          [[ "$MATCH_COUNT" == "1" ]] || {
+            echo "::error::Expected exactly one live resume artifact named $ARTIFACT_NAME; got $MATCH_COUNT."
+            exit 1
+          }
+
+          ARTIFACT_ID="$(
+            jq -r \
+              --arg name "$ARTIFACT_NAME" \
+              '.artifacts[] | select(.name == $name and .expired == false) | .id' \
+              <<<"$ARTIFACTS"
+          )"
+          ARTIFACT_DIGEST="$(
+            jq -r \
+              --arg name "$ARTIFACT_NAME" \
+              '.artifacts[] | select(.name == $name and .expired == false) | .digest' \
+              <<<"$ARTIFACTS"
+          )"
+
+          [[ "$ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "::error::Resume artifact digest is missing or invalid."
+            exit 1
+          }
+
+          rm -rf .resume-artifact
+          mkdir -p .resume-artifact
+
+          gh run download "$RESUME_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$ARTIFACT_NAME" \
+            --dir .resume-artifact
+
+          node scripts/dual-voice-resume-seed.mjs \
+            --seed .resume-artifact \
+            --out .dual-voice \
+            --batch "${{ inputs.batch }}" \
+            --source-run "$RESUME_RUN_ID" \
+            --source-sha "$SOURCE_SHA" \
+            --artifact-digest "$ARTIFACT_DIGEST" \
+            --artifact-id "$ARTIFACT_ID"
+
+          echo "Resume checkpoint PASS: run=$RESUME_RUN_ID artifact=$ARTIFACT_ID source=$SOURCE_SHA"
+
       - name: Generate selected Sulafat and Schedar variants
         shell: bash
         run: |
           set -euo pipefail
 
+          RESUME_ARGS=()
+          if [[ -f .dual-voice/resume-index.json ]]; then
+            RESUME_ARGS=(--resume-metadata .dual-voice/resume-index.json)
+          fi
+
           node scripts/dual-voice-render.mjs \
             --mode generate \
             --batch "${{ inputs.batch }}" \
-            --out .dual-voice
+            --out .dual-voice \
+            "${RESUME_ARGS[@]}"
 
       - name: Upload failed generation checkpoint
         if: failure()
