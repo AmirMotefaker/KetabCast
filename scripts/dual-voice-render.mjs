@@ -14,7 +14,10 @@ const MODEL =
   "gemini-3.1-flash-tts-preview";
 
 const API_REVISION = "2026-05-20";
-const TTS_RESPONSE_FORMAT = Object.freeze({ type: "audio" });
+const TTS_RESPONSE_FORMAT = Object.freeze({
+  type: "audio",
+  delivery: "inline",
+});
 const PCM_SAMPLE_RATE = 24000;
 const PCM_CHANNELS = 1;
 const MAX_TTS_NETWORK_REQUESTS = 10;
@@ -249,13 +252,23 @@ function findAudio(value) {
     return null;
   }
 
-  if (typeof value.data === "string") {
+  const data =
+    typeof value.data === "string" && value.data.length > 0
+      ? value.data
+      : null;
+  const uri =
+    typeof value.uri === "string" && value.uri.length > 0
+      ? value.uri
+      : null;
+
+  if (data || uri) {
     const type = String(value.type ?? "");
     const mimeType = String(value.mime_type ?? "");
 
     if (type === "audio" || mimeType.startsWith("audio/")) {
       return {
-        data: value.data,
+        data,
+        uri,
         mimeType: mimeType || "audio/pcm",
         sampleRate: Number(value.sample_rate ?? PCM_SAMPLE_RATE),
         channels: Number(value.channels ?? PCM_CHANNELS),
@@ -594,6 +607,526 @@ function validateRetryPolicy() {
   );
 }
 
+const INTERACTION_POLL_INTERVAL_MS = 5000;
+const INTERACTION_POLL_TIMEOUT_MS = 15 * 60 * 1000;
+const MAX_INTERACTION_GET_ATTEMPTS = 6;
+const INTERACTION_PENDING_STATUSES = new Set([
+  "queued",
+  "in_progress",
+]);
+const INTERACTION_TERMINAL_STATUSES = new Set([
+  "requires_action",
+  "failed",
+  "cancelled",
+  "incomplete",
+  "budget_exceeded",
+]);
+
+let interactionPollRequests = 0;
+
+function interactionStatus(value) {
+  return String(value?.status ?? "").trim().toLowerCase();
+}
+
+function interactionId(value) {
+  return String(value?.id ?? "").trim();
+}
+
+function interactionIsPending(value) {
+  return INTERACTION_PENDING_STATUSES.has(
+    interactionStatus(value),
+  );
+}
+
+function safeInteractionSummary(value) {
+  const steps = Array.isArray(value?.steps)
+    ? value.steps
+    : [];
+  const stepTypes = steps
+    .map((step) => String(step?.type ?? ""))
+    .filter(Boolean);
+  const contentTypes = steps
+    .flatMap((step) =>
+      Array.isArray(step?.content)
+        ? step.content.map((item) =>
+            String(item?.type ?? ""),
+          )
+        : [],
+    )
+    .filter(Boolean);
+  const audio = findAudio(value);
+
+  return {
+    id: interactionId(value) || null,
+    status: interactionStatus(value) || null,
+    stepTypes,
+    contentTypes,
+    hasAudioData: Boolean(audio?.data),
+    hasAudioUri: Boolean(audio?.uri),
+  };
+}
+
+function safeInteractionSummaryText(value) {
+  return JSON.stringify(
+    safeInteractionSummary(value),
+  );
+}
+
+function validateInteractionPolling() {
+  const queued = {
+    id: "interaction-queued",
+    status: "queued",
+    steps: [],
+  };
+  const inProgress = {
+    id: "interaction-progress",
+    status: "in_progress",
+    steps: [],
+  };
+  const completedData = {
+    id: "interaction-data",
+    status: "completed",
+    steps: [
+      {
+        type: "model_output",
+        content: [
+          {
+            type: "audio",
+            data: "AQIDBA==",
+            mime_type: "audio/l16",
+            sample_rate: 24000,
+            channels: 1,
+          },
+        ],
+      },
+    ],
+  };
+  const completedUri = {
+    id: "interaction-uri",
+    status: "completed",
+    steps: [
+      {
+        type: "model_output",
+        content: [
+          {
+            type: "audio",
+            uri: "https://example.invalid/audio",
+            mime_type: "audio/wav",
+          },
+        ],
+      },
+    ],
+  };
+
+  if (
+    !interactionIsPending(queued) ||
+    !interactionIsPending(inProgress)
+  ) {
+    throw new Error(
+      "Interaction pending-state self-test failed.",
+    );
+  }
+
+  const dataAudio = findAudio(completedData);
+  const uriAudio = findAudio(completedUri);
+
+  if (
+    dataAudio?.data !== "AQIDBA==" ||
+    !uriAudio?.uri
+  ) {
+    throw new Error(
+      "Interaction completed-audio extraction self-test failed.",
+    );
+  }
+
+  for (const status of [
+    "requires_action",
+    "failed",
+    "cancelled",
+    "incomplete",
+    "budget_exceeded",
+  ]) {
+    if (!INTERACTION_TERMINAL_STATUSES.has(status)) {
+      throw new Error(
+        `Interaction terminal-state self-test failed: ${status}.`,
+      );
+    }
+  }
+
+  if (
+    TTS_RESPONSE_FORMAT.type !== "audio" ||
+    TTS_RESPONSE_FORMAT.delivery !== "inline"
+  ) {
+    throw new Error(
+      "Interaction inline-audio delivery self-test failed.",
+    );
+  }
+
+  const summaryText =
+    safeInteractionSummaryText(completedData);
+
+  if (
+    summaryText.includes("AQIDBA==") ||
+    summaryText.includes("# TRANSCRIPT")
+  ) {
+    throw new Error(
+      "Interaction safe-summary self-test leaked payload content.",
+    );
+  }
+
+  console.log(
+    "Dual-voice interaction-polling PASS: " +
+    "queued/in_progress reuse ID; completed audio extraction; " +
+    "inline delivery; no duplicate generation POST.",
+  );
+}
+
+async function downloadAudioUri(apiKey, audio, voice) {
+  const uri = String(audio?.uri ?? "");
+
+  if (!uri) {
+    throw new Error(
+      `Audio URI missing for ${voice}.`,
+    );
+  }
+
+  const parsedUri = new URL(uri);
+
+  if (parsedUri.protocol !== "https:") {
+    throw new Error(
+      `Refusing non-HTTPS audio URI for ${voice}.`,
+    );
+  }
+
+  let lastError = null;
+
+  for (
+    let attempt = 1;
+    attempt <= MAX_INTERACTION_GET_ATTEMPTS;
+    attempt += 1
+  ) {
+    const headers = {};
+
+    if (
+      parsedUri.hostname ===
+        "generativelanguage.googleapis.com" ||
+      parsedUri.hostname.endsWith(".googleapis.com")
+    ) {
+      headers["x-goog-api-key"] = apiKey;
+      headers["Api-Revision"] = API_REVISION;
+    }
+
+    let response;
+
+    try {
+      interactionPollRequests += 1;
+
+      response = await fetch(uri, {
+        method: "GET",
+        headers,
+      });
+    } catch (error) {
+      lastError = error;
+
+      if (attempt >= MAX_INTERACTION_GET_ATTEMPTS) {
+        throw error;
+      }
+
+      const waitMs = transientBackoffMs(attempt);
+
+      console.log(
+        "Gemini TTS audio URI transport/read failure " +
+        `attempt ${attempt}/${MAX_INTERACTION_GET_ATTEMPTS}; ` +
+        `retrying after ${(waitMs / 1000).toFixed(1)}s. ` +
+        String(error?.message ?? error).slice(0, 300),
+      );
+
+      await sleep(waitMs);
+      continue;
+    }
+
+    if (!response.ok) {
+      const responseText = await response.text();
+      const quota = parseQuotaDetails(responseText);
+      const error = new Error(
+        `Gemini TTS audio URI HTTP ${response.status}: ` +
+        responseText.slice(0, 600),
+      );
+
+      lastError = error;
+
+      if (
+        RETRYABLE_TTS_STATUS.has(response.status) &&
+        attempt < MAX_INTERACTION_GET_ATTEMPTS
+      ) {
+        const waitMs = retryDelayForStatus(
+          response.status,
+          quota,
+          attempt,
+        );
+
+        console.log(
+          `Gemini TTS audio URI retryable HTTP ${response.status}; ` +
+          `attempt ${attempt}/${MAX_INTERACTION_GET_ATTEMPTS}; ` +
+          `retrying after ${(waitMs / 1000).toFixed(1)}s.`,
+        );
+
+        await sleep(waitMs);
+        continue;
+      }
+
+      throw error;
+    }
+
+    const buffer = Buffer.from(
+      await response.arrayBuffer(),
+    );
+
+    if (buffer.length < 2048) {
+      throw new Error(
+        `Provider URI audio too small for ${voice}: ${buffer.length}.`,
+      );
+    }
+
+    return {
+      buffer,
+      mimeType: audio.mimeType,
+      sampleRate: audio.sampleRate,
+      channels: audio.channels,
+    };
+  }
+
+  throw (
+    lastError ??
+    new Error(`Audio URI retrieval exhausted for ${voice}.`)
+  );
+}
+
+async function materializeInteractionAudio(
+  apiKey,
+  interaction,
+  voice,
+) {
+  const audio =
+    findAudio(interaction?.output_audio) ??
+    findAudio(interaction);
+
+  if (!audio) {
+    return null;
+  }
+
+  if (audio.data) {
+    const buffer = Buffer.from(
+      audio.data,
+      "base64",
+    );
+
+    if (buffer.length < 2048) {
+      throw new Error(
+        `Provider audio too small for ${voice}: ${buffer.length}.`,
+      );
+    }
+
+    return {
+      buffer,
+      mimeType: audio.mimeType,
+      sampleRate: audio.sampleRate,
+      channels: audio.channels,
+    };
+  }
+
+  if (audio.uri) {
+    return downloadAudioUri(
+      apiKey,
+      audio,
+      voice,
+    );
+  }
+
+  return null;
+}
+
+async function getInteraction(
+  apiKey,
+  id,
+  pollNumber,
+) {
+  const url =
+    "https://generativelanguage.googleapis.com/v1beta/interactions/" +
+    encodeURIComponent(id);
+
+  let lastError = null;
+
+  for (
+    let attempt = 1;
+    attempt <= MAX_INTERACTION_GET_ATTEMPTS;
+    attempt += 1
+  ) {
+    let response;
+
+    try {
+      interactionPollRequests += 1;
+
+      response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "x-goog-api-key": apiKey,
+          "Api-Revision": API_REVISION,
+        },
+      });
+    } catch (error) {
+      lastError = error;
+
+      if (attempt >= MAX_INTERACTION_GET_ATTEMPTS) {
+        throw error;
+      }
+
+      const waitMs = transientBackoffMs(attempt);
+
+      console.log(
+        "Gemini interaction GET transport/read failure " +
+        `poll=${pollNumber}; ` +
+        `attempt ${attempt}/${MAX_INTERACTION_GET_ATTEMPTS}; ` +
+        `retrying after ${(waitMs / 1000).toFixed(1)}s. ` +
+        String(error?.message ?? error).slice(0, 300),
+      );
+
+      await sleep(waitMs);
+      continue;
+    }
+
+    const responseText = await response.text();
+
+    if (!response.ok) {
+      const quota = parseQuotaDetails(responseText);
+      const error = new Error(
+        `Gemini interaction GET HTTP ${response.status}: ` +
+        responseText.slice(0, 600),
+      );
+
+      lastError = error;
+
+      if (
+        RETRYABLE_TTS_STATUS.has(response.status) &&
+        attempt < MAX_INTERACTION_GET_ATTEMPTS
+      ) {
+        const waitMs = retryDelayForStatus(
+          response.status,
+          quota,
+          attempt,
+        );
+
+        console.log(
+          `Gemini interaction GET retryable HTTP ${response.status}; ` +
+          `poll=${pollNumber}; ` +
+          `attempt ${attempt}/${MAX_INTERACTION_GET_ATTEMPTS}; ` +
+          `retrying after ${(waitMs / 1000).toFixed(1)}s.`,
+        );
+
+        await sleep(waitMs);
+        continue;
+      }
+
+      throw error;
+    }
+
+    try {
+      return JSON.parse(responseText);
+    } catch (error) {
+      throw new Error(
+        "TTS_INTERACTION_GET_INVALID_JSON: " +
+        String(error?.message ?? error),
+      );
+    }
+  }
+
+  throw (
+    lastError ??
+    new Error(`Interaction GET exhausted: ${id}.`)
+  );
+}
+
+async function resolveAcceptedInteraction(
+  apiKey,
+  initialInteraction,
+  voice,
+) {
+  let interaction = initialInteraction;
+  const id = interactionId(interaction);
+  const startedAt = Date.now();
+  let pollNumber = 0;
+
+  while (true) {
+    const generated = await materializeInteractionAudio(
+      apiKey,
+      interaction,
+      voice,
+    );
+
+    if (generated) {
+      return generated;
+    }
+
+    const status = interactionStatus(interaction);
+    const summary =
+      safeInteractionSummaryText(interaction);
+
+    if (status === "completed") {
+      throw new Error(
+        `TTS_INTERACTION_COMPLETED_WITHOUT_AUDIO: ${summary}`,
+      );
+    }
+
+    if (INTERACTION_TERMINAL_STATUSES.has(status)) {
+      throw new Error(
+        `TTS_INTERACTION_TERMINAL: ${summary}`,
+      );
+    }
+
+    if (!id) {
+      return null;
+    }
+
+    if (
+      status &&
+      !INTERACTION_PENDING_STATUSES.has(status)
+    ) {
+      throw new Error(
+        `TTS_INTERACTION_UNKNOWN_STATUS: ${summary}`,
+      );
+    }
+
+    if (
+      Date.now() - startedAt >=
+      INTERACTION_POLL_TIMEOUT_MS
+    ) {
+      throw new Error(
+        `TTS_INTERACTION_POLL_TIMEOUT: ${summary}`,
+      );
+    }
+
+    pollNumber += 1;
+
+    if (
+      pollNumber === 1 ||
+      pollNumber % 6 === 0
+    ) {
+      console.log(
+        `Gemini TTS interaction pending; ` +
+        `poll=${pollNumber}; ${summary}`,
+      );
+    }
+
+    await sleep(INTERACTION_POLL_INTERVAL_MS);
+
+    interaction = await getInteraction(
+      apiKey,
+      id,
+      pollNumber,
+    );
+  }
+}
+
 async function callTts(apiKey, voice, prompt, plannedRequests) {
   const body = {
     model: MODEL,
@@ -642,10 +1175,10 @@ async function callTts(apiKey, voice, prompt, plannedRequests) {
       const waitMs = transientBackoffMs(attempt);
 
       console.log(
-        "Gemini TTS transport/read failure " +
+        "Gemini TTS generation POST transport/read failure " +
         `attempt ${attempt}/${MAX_TTS_ATTEMPTS_PER_CHUNK}; ` +
         `retrying after ${(waitMs / 1000).toFixed(1)}s. ` +
-        `networkRequestsUsed=${ttsNetworkRequests}. ` +
+        `generationRequestsUsed=${ttsNetworkRequests}. ` +
         String(error?.message ?? error).slice(0, 300),
       );
 
@@ -663,13 +1196,13 @@ async function callTts(apiKey, voice, prompt, plannedRequests) {
         throw new Error(
           "DAILY_TTS_QUOTA_EXHAUSTED: explicit per-day Gemini TTS " +
           "quota is exhausted. Wait for the daily reset. " +
-          `networkRequestsUsed=${ttsNetworkRequests}. ` +
+          `generationRequestsUsed=${ttsNetworkRequests}. ` +
           responseText.slice(0, 900),
         );
       }
 
       const error = new Error(
-        `Gemini TTS HTTP ${response.status}: ` +
+        `Gemini TTS generation POST HTTP ${response.status}: ` +
         responseText.slice(0, 900),
       );
 
@@ -686,10 +1219,10 @@ async function callTts(apiKey, voice, prompt, plannedRequests) {
         );
 
         console.log(
-          `Gemini TTS retryable HTTP ${response.status}; ` +
+          `Gemini TTS generation POST retryable HTTP ${response.status}; ` +
           `attempt ${attempt}/${MAX_TTS_ATTEMPTS_PER_CHUNK}; ` +
           `retrying after ${(waitMs / 1000).toFixed(1)}s. ` +
-          `networkRequestsUsed=${ttsNetworkRequests}.`,
+          `generationRequestsUsed=${ttsNetworkRequests}.`,
         );
 
         await sleep(waitMs);
@@ -699,59 +1232,54 @@ async function callTts(apiKey, voice, prompt, plannedRequests) {
       throw error;
     }
 
+    let interaction;
+
     try {
-      const parsed = JSON.parse(responseText);
-      const audio =
-        findAudio(parsed.output_audio) ??
-        findAudio(parsed);
-
-      if (!audio?.data) {
-        throw new Error(
-          `No output_audio returned for ${voice}.`,
-        );
-      }
-
-      const buffer = Buffer.from(
-        audio.data,
-        "base64",
-      );
-
-      if (buffer.length < 2048) {
-        throw new Error(
-          `Provider audio too small for ${voice}: ${buffer.length}.`,
-        );
-      }
-
-      return {
-        buffer,
-        mimeType: audio.mimeType,
-        sampleRate: audio.sampleRate,
-        channels: audio.channels,
-      };
+      interaction = JSON.parse(responseText);
     } catch (error) {
       lastError = error;
 
       if (attempt >= MAX_TTS_ATTEMPTS_PER_CHUNK) {
-        throw error;
+        throw new Error(
+          "TTS_INTERACTION_INVALID_JSON: " +
+          String(error?.message ?? error),
+        );
       }
 
       const waitMs = transientBackoffMs(attempt);
 
       console.log(
-        "Gemini TTS provider-response failure " +
+        "Gemini TTS generation POST returned invalid JSON; " +
         `attempt ${attempt}/${MAX_TTS_ATTEMPTS_PER_CHUNK}; ` +
         `retrying after ${(waitMs / 1000).toFixed(1)}s. ` +
-        `networkRequestsUsed=${ttsNetworkRequests}. ` +
-        String(error?.message ?? error).slice(0, 300),
+        `generationRequestsUsed=${ttsNetworkRequests}.`,
       );
 
       await sleep(waitMs);
+      continue;
     }
+
+    const generated = await resolveAcceptedInteraction(
+      apiKey,
+      interaction,
+      voice,
+    );
+
+    if (generated) {
+      return generated;
+    }
+
+    const summary =
+      safeInteractionSummaryText(interaction);
+
+    throw new Error(
+      `TTS_INTERACTION_2XX_WITHOUT_ID_OR_AUDIO: ${summary}`,
+    );
   }
 
   throw (
     lastError ??
-    new Error("Gemini TTS retry loop exhausted without a result.")
+    new Error("Gemini TTS generation POST retry loop exhausted.")
   );
 }
 
@@ -1014,12 +1542,14 @@ function validateSelection(selection, lexicon) {
     throw new Error("fa-IR pronunciation lexicon contract failed.");
   }
 
-  const keys = Object.keys(TTS_RESPONSE_FORMAT);
+  const keys = Object.keys(TTS_RESPONSE_FORMAT).sort();
 
   if (
-    keys.length !== 1 ||
-    keys[0] !== "type" ||
-    TTS_RESPONSE_FORMAT.type !== "audio"
+    keys.length !== 2 ||
+    keys[0] !== "delivery" ||
+    keys[1] !== "type" ||
+    TTS_RESPONSE_FORMAT.type !== "audio" ||
+    TTS_RESPONSE_FORMAT.delivery !== "inline"
   ) {
     throw new Error("Gemini TTS response_format contract changed.");
   }
@@ -1053,6 +1583,7 @@ async function main() {
   validateSelection(selection, lexicon);
   validateRateLimitClassifier();
   validateRetryPolicy();
+  validateInteractionPolling();
 
   const selectedEpisodes = slugs.map((slug) => {
     const episode = episodes.find((item) => item.bookSlug === slug);
@@ -1189,6 +1720,7 @@ async function main() {
   }
 
   manifest.ttsRequestBudget.networkRequestsUsed = ttsNetworkRequests;
+  manifest.ttsRequestBudget.interactionPollRequests = interactionPollRequests;
 
   await writeFile(
     path.join(outRoot, "dual-voice-manifest.json"),

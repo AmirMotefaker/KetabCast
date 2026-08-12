@@ -21,6 +21,7 @@
 - v0.2.0-beta.5.1.1 — Gemini TTS Retry-After hotfix: 429 کوتاه‌مدت با retry hint دیگر daily quota تلقی نمی‌شود؛ صفحه اصلی نیز وضعیت milestone و پیشرفت Dual Voice را از GitHub Pages نمایش می‌دهد.
 - v0.2.0-beta.5.1.2 — Gemini TTS Retry Policy v2: سه attempt برای هر chunk، retry صریح 408/429/5xx، backoff+jitter، pacing دوازده‌ثانیه‌ای و hard cap ده درخواست؛ Batch A هنوز ۰/۱۰ و آماده rerun کنترل‌شده است.
 - v0.2.0-beta.5.1.3 — Dual-Voice media publication hardening: artifact recovery قبل از media publication ذخیره می‌شود و assetها با filename canonical واقعی، SHA/bytes و download-back integrity منتشر می‌شوند؛ Batch A هنوز ۰/۱۰ است.
+- v0.2.0-beta.5.1.4 — Gemini TTS Interaction completion polling: پاسخ 2xx دارای Interaction ID دیگر POST تکراری ایجاد نمی‌کند؛ همان Interaction تا completion با GET poll می‌شود، delivery صوت inline است و URI fallback نیز پشتیبانی می‌شود؛ Batch A هنوز ۰/۱۰ است.
 
 هدف این سند: تعریف کامل محصول تا نسخه ۱.۰ (Production Platform) به‌طوری‌که هر AI Agent با خواندن این فایل بتواند بدون پرسیدن سؤال از صفر تا صد کار را جلو ببرد.
 
