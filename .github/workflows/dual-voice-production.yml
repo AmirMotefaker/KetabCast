@@ -193,6 +193,14 @@ jobs:
             exit 1
           fi
 
+      - name: Upload dual-voice evidence artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: dual-voice-${{ inputs.batch }}-${{ github.run_id }}
+          path: .dual-voice
+          if-no-files-found: error
+          retention-days: 14
+          include-hidden-files: true
       - name: Create or verify immutable dual-voice media release
         id: media
         shell: bash
@@ -254,10 +262,14 @@ jobs:
         run: |
           set -euo pipefail
 
+          UPLOAD_DIR="$RUNNER_TEMP/dual-voice-release-assets"
+          mkdir -p "$UPLOAD_DIR"
+
           while IFS=$'\t' read -r SLUG ROLE VOICE PODCAST LOCAL_SHA LOCAL_BYTES; do
             VOICE_SLUG="$(tr '[:upper:]' '[:lower:]' <<<"$VOICE")"
             ASSET_NAME="$SLUG-$VOICE_SLUG-v1.mp3"
             FILE=".dual-voice/$PODCAST"
+            UPLOAD_FILE="$UPLOAD_DIR/$ASSET_NAME"
 
             if gh api \
               "repos/$GITHUB_REPOSITORY/releases/tags/$MEDIA_TAG" \
@@ -267,9 +279,22 @@ jobs:
               exit 1
             fi
 
-            gh release upload "$MEDIA_TAG" \
-              "$FILE#$ASSET_NAME" \
-              --clobber=false
+            cp "$FILE" "$UPLOAD_FILE"
+
+            UPLOAD_SHA="$(sha256sum "$UPLOAD_FILE" | awk '{print $1}')"
+            UPLOAD_BYTES="$(stat -c %s "$UPLOAD_FILE")"
+
+            [[ "$UPLOAD_SHA" == "$LOCAL_SHA" ]] || {
+              echo "::error::$ASSET_NAME canonical upload SHA mismatch"
+              exit 1
+            }
+
+            [[ "$UPLOAD_BYTES" == "$LOCAL_BYTES" ]] || {
+              echo "::error::$ASSET_NAME canonical upload byte mismatch"
+              exit 1
+            }
+
+            gh release upload "$MEDIA_TAG" "$UPLOAD_FILE"
 
             ROW="$(
               gh api \
@@ -316,14 +341,6 @@ jobs:
               .dual-voice/dual-voice-manifest.json
           )
 
-      - name: Upload dual-voice evidence artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: dual-voice-${{ inputs.batch }}-${{ github.run_id }}
-          path: .dual-voice
-          if-no-files-found: error
-          retention-days: 14
-          include-hidden-files: true
 
       - name: Record batch evidence
         shell: bash
