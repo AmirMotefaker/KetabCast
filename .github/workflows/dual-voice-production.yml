@@ -10,6 +10,8 @@ on:
         type: choice
         options:
           - batch-a
+          - batch-a-atomic
+          - batch-a-deep-work
           - batch-b
           - batch-c
       tracking_issue:
@@ -104,6 +106,16 @@ jobs:
             --mode generate \
             --batch "${{ inputs.batch }}" \
             --out .dual-voice
+
+      - name: Upload failed generation checkpoint
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dual-voice-failed-${{ inputs.batch }}-${{ github.run_id }}
+          path: .dual-voice
+          if-no-files-found: warn
+          retention-days: 14
+          include-hidden-files: true
 
       - name: Round-trip QA every dry narration
         shell: bash
