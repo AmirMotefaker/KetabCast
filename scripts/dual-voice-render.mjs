@@ -70,6 +70,7 @@ function parseArgs(argv) {
     batch: "batch-a",
     mode: "validate",
     out: ".dual-voice-review",
+    resumeMetadata: null,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -81,6 +82,8 @@ function parseArgs(argv) {
       options.mode = argv[++index];
     } else if (token === "--out") {
       options.out = argv[++index];
+    } else if (token === "--resume-metadata") {
+      options.resumeMetadata = argv[++index];
     } else {
       throw new Error(`Unknown argument: ${token}`);
     }
@@ -457,8 +460,12 @@ function parseQuotaDetails(responseText) {
     ) ||
     /\b(?:daily|per day)\b/iu.test(errorMessage);
 
+  const freeTierRequestWindow =
+    /generate_content_free_tier_requests/iu.test(errorMessage);
+
   return {
     daily,
+    freeTierRequestWindow,
     retryDelayMs: parseRetryDelayMs(responseText),
     quotaIds,
   };
@@ -604,9 +611,7 @@ function validateRateLimitClassifier() {
   const transient = JSON.stringify({
     error: {
       message:
-        "Quota exceeded for metric: " +
-        "generate_content_free_tier_requests, limit: 10. " +
-        "Please retry in 23.145143415s.",
+        "Temporary provider throttling. Please retry in 23.145143415s.",
       details: [
         {
           "@type":
@@ -622,11 +627,35 @@ function validateRateLimitClassifier() {
 
   if (
     transientResult.daily ||
+    transientResult.freeTierRequestWindow ||
     !transientResult.retryDelayMs ||
     transientResult.retryDelayMs < 23145
   ) {
     throw new Error(
       "Transient 429 classifier self-test failed.",
+    );
+  }
+
+  const freeTierWindow = JSON.stringify({
+    error: {
+      message:
+        "Quota exceeded for metric: " +
+        "generativelanguage.googleapis.com/" +
+        "generate_content_free_tier_requests, limit: 10. " +
+        "Please retry in 57.838s.",
+    },
+  });
+
+  const freeTierResult =
+    parseQuotaDetails(freeTierWindow);
+
+  if (
+    freeTierResult.daily ||
+    !freeTierResult.freeTierRequestWindow ||
+    !freeTierResult.retryDelayMs
+  ) {
+    throw new Error(
+      "Free-tier request-window classifier self-test failed.",
     );
   }
 
@@ -656,7 +685,7 @@ function validateRateLimitClassifier() {
 
   console.log(
     "Dual-voice rate-limit classifier PASS: " +
-    "transient retry hint vs explicit daily quota.",
+    "generic transient vs free-tier request window vs explicit daily quota.",
   );
 }
 
@@ -2083,6 +2112,19 @@ async function callTts(
       }
 
       if (
+        response.status === 429 &&
+        quota.freeTierRequestWindow
+      ) {
+        throw new Error(
+          "TTS_FREE_TIER_REQUEST_WINDOW_EXHAUSTED: " +
+          "checkpoint and resume later; refusing repeated same-run POSTs. " +
+          `retryAfterMs=${quota.retryDelayMs ?? "unknown"}; ` +
+          `generationRequestsUsed=${ttsNetworkRequests}. ` +
+          responseText.slice(0, 900),
+        );
+      }
+
+      if (
         isTtsClassifierContentBlocked(
           response.status,
           responseText,
@@ -2323,6 +2365,159 @@ function concatText(files) {
   );
 }
 
+async function loadResumeMetadata(file) {
+  if (!file) return null;
+
+  const resolved = path.resolve(file);
+  const parsed = JSON.parse(await readFile(resolved, "utf8"));
+
+  if (
+    parsed?.schemaVersion !== 1 ||
+    typeof parsed?.batch !== "string" ||
+    !Array.isArray(parsed?.chunks)
+  ) {
+    throw new Error("DUAL_VOICE_RESUME_METADATA_INVALID");
+  }
+
+  return parsed;
+}
+
+async function writeChunkCheckpoint({
+  checkpointFile,
+  outRoot,
+  wav,
+  bookSlug,
+  role,
+  voice,
+  spokenText,
+  chunk,
+  reusedFrom,
+}) {
+  const wavBytes = await readFile(wav);
+  const checkpoint = {
+    schemaVersion: 1,
+    bookSlug,
+    role,
+    providerVoice: voice,
+    chunkIndex: chunk.index,
+    relativePath: path
+      .relative(outRoot, wav)
+      .replaceAll("\\", "/"),
+    spokenScriptSha256: sha256(spokenText),
+    spokenChunkSha256: sha256(chunk.text),
+    wavSha256: sha256(wavBytes),
+    durationSeconds: Number(durationSeconds(wav).toFixed(3)),
+    sourceCodeSha:
+      process.env.GITHUB_SHA?.trim() ||
+      run("git", ["rev-parse", "HEAD"]),
+    sourceRunId:
+      Number(process.env.GITHUB_RUN_ID ?? 0) || null,
+    reusedFrom: reusedFrom ?? null,
+  };
+
+  await writeFile(
+    checkpointFile,
+    `${JSON.stringify(checkpoint, null, 2)}\n`,
+    "utf8",
+  );
+
+  return checkpoint;
+}
+
+async function resumeGeneratedChunk({
+  resumeMetadata,
+  outRoot,
+  wav,
+  bookSlug,
+  role,
+  voice,
+  spokenText,
+  chunk,
+}) {
+  if (!resumeMetadata) return null;
+
+  const relativePath = path
+    .relative(outRoot, wav)
+    .replaceAll("\\", "/");
+
+  const entry = resumeMetadata.chunks.find(
+    (candidate) =>
+      String(candidate?.relativePath ?? "") === relativePath,
+  );
+
+  if (!entry) return null;
+
+  const expectedScriptSha = sha256(spokenText);
+  const expectedChunkSha = sha256(chunk.text);
+
+  if (
+    entry.bookSlug !== bookSlug ||
+    entry.role !== role ||
+    entry.providerVoice !== voice ||
+    Number(entry.chunkIndex) !== chunk.index ||
+    entry.spokenScriptSha256 !== expectedScriptSha ||
+    entry.spokenChunkSha256 !== expectedChunkSha
+  ) {
+    throw new Error(
+      `DUAL_VOICE_RESUME_PROVENANCE_MISMATCH: ${relativePath}`,
+    );
+  }
+
+  if (
+    !Number.isInteger(Number(entry.sourceRunId)) ||
+    Number(entry.sourceRunId) <= 0 ||
+    !/^[0-9a-f]{40}$/u.test(String(entry.sourceSha ?? "")) ||
+    !Number.isInteger(Number(entry.artifactId)) ||
+    Number(entry.artifactId) <= 0 ||
+    !/^sha256:[0-9a-f]{64}$/u.test(
+      String(entry.artifactDigest ?? ""),
+    )
+  ) {
+    throw new Error(
+      `DUAL_VOICE_RESUME_SOURCE_INVALID: ${relativePath}`,
+    );
+  }
+
+  const wavBytes = await readFile(wav);
+  const actualWavSha = sha256(wavBytes);
+
+  if (actualWavSha !== entry.wavSha256) {
+    throw new Error(
+      `DUAL_VOICE_RESUME_WAV_SHA_MISMATCH: ${relativePath}`,
+    );
+  }
+
+  const actualDuration = durationSeconds(wav);
+  const expectedDuration = Number(entry.durationSeconds);
+
+  if (
+    !Number.isFinite(expectedDuration) ||
+    Math.abs(actualDuration - expectedDuration) > 0.05
+  ) {
+    throw new Error(
+      `DUAL_VOICE_RESUME_DURATION_MISMATCH: ${relativePath}`,
+    );
+  }
+
+  console.log(
+    `Dual-voice checkpoint resume PASS: ${relativePath}; ` +
+    `sourceRun=${entry.sourceRunId}; ` +
+    `sourceSha=${entry.sourceSha}; ` +
+    `legacyReindexed=${Boolean(entry.legacyReindexed)}.`,
+  );
+
+  return {
+    mimeType: "audio/wav",
+    sampleRate: 44100,
+    channels: 1,
+    checkpointReused: true,
+    reusedFromRunId: Number(entry.sourceRunId),
+    reusedFromSourceSha: String(entry.sourceSha),
+    reusedFromArtifactId: Number(entry.artifactId),
+    reusedFromArtifactDigest: String(entry.artifactDigest),
+  };
+}
+
 async function renderVariant({
   apiKey,
   bookSlug,
@@ -2334,6 +2529,7 @@ async function renderVariant({
   spokenText,
   outRoot,
   plannedRequests,
+  resumeMetadata,
 }) {
   const root = path.join(outRoot, bookSlug, role);
   const chunksRoot = path.join(root, "chunks");
@@ -2372,22 +2568,61 @@ async function renderVariant({
       `${bookSlug}/${role}/${voice}: TTS ${chunk.index + 1}/2`,
     );
 
-    const generated = await callTts(
-      apiKey,
+    let generated = await resumeGeneratedChunk({
+      resumeMetadata,
+      outRoot,
+      wav,
+      bookSlug,
+      role,
       voice,
-      prompt,
-      plannedRequests,
-      {
-        spokenChunkSha256: chunkTextSha256,
-        recoveryPrompt,
-      },
+      spokenText,
+      chunk,
+    });
+
+    if (!generated) {
+      generated = await callTts(
+        apiKey,
+        voice,
+        prompt,
+        plannedRequests,
+        {
+          spokenChunkSha256: chunkTextSha256,
+          recoveryPrompt,
+        },
+      );
+
+      successfullySynthesizedTextHashes.add(
+        chunkTextSha256,
+      );
+
+      await providerToWav(generated, wav, temp);
+    }
+
+    const checkpointFile = path.join(
+      chunksRoot,
+      `${prefix}.checkpoint.json`,
     );
 
-    successfullySynthesizedTextHashes.add(
-      chunkTextSha256,
-    );
+    await writeChunkCheckpoint({
+      checkpointFile,
+      outRoot,
+      wav,
+      bookSlug,
+      role,
+      voice,
+      spokenText,
+      chunk,
+      reusedFrom: generated.checkpointReused
+        ? {
+            sourceRunId: generated.reusedFromRunId,
+            sourceSha: generated.reusedFromSourceSha,
+            artifactId: generated.reusedFromArtifactId,
+            artifactDigest:
+              generated.reusedFromArtifactDigest,
+          }
+        : null,
+    });
 
-    await providerToWav(generated, wav, temp);
     await makeSilence(pause, chunk.pauseAfterMs);
 
     const chunkDuration = durationSeconds(wav);
@@ -2404,6 +2639,15 @@ async function renderVariant({
       sourceMimeType: generated.mimeType,
       sourceSampleRate: generated.sampleRate,
       sourceChannels: generated.channels,
+      checkpointReused: Boolean(
+        generated.checkpointReused,
+      ),
+      reusedFromRunId:
+        generated.reusedFromRunId ?? null,
+      reusedFromSourceSha:
+        generated.reusedFromSourceSha ?? null,
+      reusedFromArtifactId:
+        generated.reusedFromArtifactId ?? null,
     });
 
     await sleep(900);
@@ -2633,6 +2877,18 @@ async function main() {
   const outRoot = path.resolve(options.out);
   await mkdir(outRoot, { recursive: true });
 
+  const resumeMetadata =
+    await loadResumeMetadata(options.resumeMetadata);
+
+  if (
+    resumeMetadata &&
+    resumeMetadata.batch !== options.batch
+  ) {
+    throw new Error(
+      `DUAL_VOICE_RESUME_BATCH_MISMATCH: ${resumeMetadata.batch} != ${options.batch}`,
+    );
+  }
+
   const manifest = {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
@@ -2653,6 +2909,15 @@ async function main() {
       plannedSuccessfulRequests: plannedRequests,
       hardNetworkRequestCap: MAX_TTS_NETWORK_REQUESTS,
     },
+    resume: resumeMetadata
+      ? {
+          sourceRunId: resumeMetadata.sourceRunId,
+          sourceSha: resumeMetadata.sourceSha,
+          artifactId: resumeMetadata.artifactId,
+          artifactDigest: resumeMetadata.artifactDigest,
+          restoredChunks: resumeMetadata.chunks.length,
+        }
+      : null,
     assets: [],
   };
 
@@ -2711,6 +2976,7 @@ async function main() {
         spokenText,
         outRoot,
         plannedRequests,
+        resumeMetadata,
       });
 
       manifest.assets.push(asset);

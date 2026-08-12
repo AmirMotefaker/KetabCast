@@ -48,5 +48,8 @@ jobs:
       - name: Factory configuration
         run: npm run factory:validate
 
+      - name: Dual-voice resume contracts
+        run: npm run voice:dual:resume:validate
+
       - name: Production build
         run: npm run build
