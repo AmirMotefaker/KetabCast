@@ -20,7 +20,8 @@ const TTS_RESPONSE_FORMAT = Object.freeze({
 const PCM_SAMPLE_RATE = 24000;
 const PCM_CHANNELS = 1;
 const MAX_TTS_NETWORK_REQUESTS = 10;
-const MAX_CONTENT_BLOCKED_RECOVERY_POSTS = 2;
+const MAX_CONTENT_BLOCKED_RECOVERY_POSTS = 4;
+const MAX_CONTENT_BLOCKED_CLASSIFIER_BLOCKS = 2;
 const MIN_TTS_REQUEST_INTERVAL_MS = 12000;
 const DEFAULT_TRANSIENT_429_DELAY_MS = 30000;
 const MAX_TRANSIENT_RETRY_DELAY_MS = 120000;
@@ -50,13 +51,18 @@ const BOOK_AUDIO_PROFILE = Object.freeze({
 
 const BATCHES = Object.freeze({
   "batch-a": ["atomic-habits", "deep-work"],
+  "batch-a-atomic": ["atomic-habits"],
+  "batch-a-deep-work": ["deep-work"],
   "batch-b": ["think-again", "zero-to-one"],
   "batch-c": ["leading-teams"],
 });
 
 let ttsNetworkRequests = 0;
 let lastTtsRequestStartedAt = 0;
-const contentBlockedRecoveryState = { used: 0 };
+const contentBlockedRecoveryState = {
+  used: 0,
+  classifierBlocks: 0,
+};
 const successfullySynthesizedTextHashes = new Set();
 
 function parseArgs(argv) {
@@ -487,11 +493,9 @@ function isTtsClassifierContentBlocked(status, responseText) {
 function contentBlockedRecoveryEligibleForText({
   textHash,
   recoveryPrompt,
-  classifierRecoveryUsed,
   successfulTextHashes,
 }) {
   return (
-    !classifierRecoveryUsed &&
     Boolean(textHash) &&
     Boolean(recoveryPrompt) &&
     successfulTextHashes.has(textHash)
@@ -501,10 +505,7 @@ function contentBlockedRecoveryEligibleForText({
 function contentBlockedRecoveryPostsUsed(recoveryState) {
   const used = Number(recoveryState?.used ?? 0);
 
-  if (
-    !Number.isInteger(used) ||
-    used < 0
-  ) {
+  if (!Number.isInteger(used) || used < 0) {
     throw new Error(
       "TTS_CONTENT_BLOCKED_RECOVERY_STATE_INVALID: " +
       `used=${String(recoveryState?.used)}`,
@@ -512,6 +513,23 @@ function contentBlockedRecoveryPostsUsed(recoveryState) {
   }
 
   return used;
+}
+
+function contentBlockedClassifierBlocksSeen(
+  recoveryState,
+) {
+  const seen = Number(
+    recoveryState?.classifierBlocks ?? 0,
+  );
+
+  if (!Number.isInteger(seen) || seen < 0) {
+    throw new Error(
+      "TTS_CONTENT_BLOCKED_CLASSIFIER_STATE_INVALID: " +
+      `classifierBlocks=${String(recoveryState?.classifierBlocks)}`,
+    );
+  }
+
+  return seen;
 }
 
 function contentBlockedRecoveryBudgetAvailable(
@@ -523,15 +541,22 @@ function contentBlockedRecoveryBudgetAvailable(
   );
 }
 
+function contentBlockedClassifierBudgetAvailable(
+  recoveryState,
+) {
+  return (
+    contentBlockedClassifierBlocksSeen(recoveryState) <
+    MAX_CONTENT_BLOCKED_CLASSIFIER_BLOCKS
+  );
+}
+
 function reserveContentBlockedRecoveryPost(
   recoveryState,
 ) {
   const used =
     contentBlockedRecoveryPostsUsed(recoveryState);
 
-  if (
-    used >= MAX_CONTENT_BLOCKED_RECOVERY_POSTS
-  ) {
+  if (used >= MAX_CONTENT_BLOCKED_RECOVERY_POSTS) {
     throw new Error(
       "TTS_CONTENT_BLOCKED_RECOVERY_BUDGET_EXHAUSTED: " +
       `recoveryPostsUsed=${used}/` +
@@ -543,10 +568,21 @@ function reserveContentBlockedRecoveryPost(
   return recoveryState.used;
 }
 
-function canRecoverContentBlocked({
+function recordContentBlockedClassifierBlock(
+  recoveryState,
+) {
+  const seen =
+    contentBlockedClassifierBlocksSeen(
+      recoveryState,
+    );
+
+  recoveryState.classifierBlocks = seen + 1;
+  return recoveryState.classifierBlocks;
+}
+
+function canEnterContentBlockedRecovery({
   textHash,
   recoveryPrompt,
-  classifierRecoveryUsed,
   successfulTextHashes,
   recoveryState,
 }) {
@@ -554,15 +590,16 @@ function canRecoverContentBlocked({
     contentBlockedRecoveryEligibleForText({
       textHash,
       recoveryPrompt,
-      classifierRecoveryUsed,
       successfulTextHashes,
     }) &&
     contentBlockedRecoveryBudgetAvailable(
       recoveryState,
+    ) &&
+    contentBlockedClassifierBudgetAvailable(
+      recoveryState,
     )
   );
 }
-
 function validateRateLimitClassifier() {
   const transient = JSON.stringify({
     error: {
@@ -653,7 +690,7 @@ function reserveTtsNetworkRequest(plannedRequests) {
   ttsNetworkRequests += 1;
 }
 
-const MAX_TTS_ATTEMPTS_PER_CHUNK = 3;
+const MAX_TTS_ATTEMPTS_PER_CHUNK = 5;
 const RETRYABLE_TTS_STATUS = new Set([
   408,
   429,
@@ -698,7 +735,7 @@ function retryDelayForStatus(status, quota, attempt) {
 }
 
 function validateRetryPolicy() {
-  if (MAX_TTS_ATTEMPTS_PER_CHUNK !== 3) {
+  if (MAX_TTS_ATTEMPTS_PER_CHUNK !== 5) {
     throw new Error(
       "Retry policy attempt-count self-test failed.",
     );
@@ -732,9 +769,15 @@ function validateRetryPolicy() {
     );
   }
 
-  if (MAX_CONTENT_BLOCKED_RECOVERY_POSTS !== 2) {
+  if (MAX_CONTENT_BLOCKED_RECOVERY_POSTS !== 4) {
     throw new Error(
-      "TTS content-blocked recovery-cap self-test failed.",
+      "TTS content-blocked recovery-network-cap self-test failed.",
+    );
+  }
+
+  if (MAX_CONTENT_BLOCKED_CLASSIFIER_BLOCKS !== 2) {
+    throw new Error(
+      "TTS content-blocked classifier-outcome-cap self-test failed.",
     );
   }
 
@@ -773,9 +816,10 @@ function validateRetryPolicy() {
 
   console.log(
     "Dual-voice retry-policy PASS: " +
-    "3 attempts/chunk, 408/429/5xx retryable, " +
+    "5 attempts/chunk, 408/429/5xx retryable, " +
     "12s pacing, hard cap 10; " +
-    "content_blocked recovery cap 2.",
+    "content_blocked recovery network cap 4; " +
+    "classifier-block cap 2.",
   );
 }
 
@@ -1249,12 +1293,6 @@ async function validateContentBlockedRecoveryRuntime() {
     );
   }
 
-  const successfulTextHashes = new Set([textHash]);
-  const recoveryState = { used: 0 };
-  const postedInputs = [];
-  let fetchCalls = 0;
-  let reservedPosts = 0;
-
   const contentBlockedFixture = JSON.stringify({
     error: {
       message:
@@ -1264,33 +1302,70 @@ async function validateContentBlockedRecoveryRuntime() {
     },
   });
 
+  const rateLimitedFixture = JSON.stringify({
+    error: {
+      message: "Rate limit exceeded. Please retry in 1s.",
+      code: "rate_limit_exceeded",
+    },
+  });
+
+  const successState = {
+    used: 0,
+    classifierBlocks: 0,
+  };
+  const successInputs = [];
+  let successFetchCalls = 0;
+  let successReservedPosts = 0;
+
   const generated = await callTts(
     "self-test-key",
     "Schedar",
     primaryPrompt,
-    8,
+    4,
     {
       spokenChunkSha256: textHash,
       recoveryPrompt,
       successfullySynthesizedTextHashes:
-        successfulTextHashes,
-      contentBlockedRecoveryState: recoveryState,
+        new Set([textHash]),
+      contentBlockedRecoveryState:
+        successState,
       paceTtsRequest: async () => {},
       reserveTtsNetworkRequest: () => {
-        reservedPosts += 1;
+        successReservedPosts += 1;
       },
       sleep: async () => {},
       fetch: async (_url, request) => {
-        fetchCalls += 1;
-        postedInputs.push(
-          JSON.parse(String(request?.body ?? "{}")).input,
+        successFetchCalls += 1;
+        successInputs.push(
+          JSON.parse(
+            String(request?.body ?? "{}"),
+          ).input,
         );
 
-        if (fetchCalls === 1) {
+        if (successFetchCalls === 1) {
           return {
             ok: false,
             status: 400,
-            text: async () => contentBlockedFixture,
+            text: async () =>
+              contentBlockedFixture,
+          };
+        }
+
+        if (successFetchCalls === 2) {
+          return {
+            ok: false,
+            status: 429,
+            text: async () =>
+              rateLimitedFixture,
+          };
+        }
+
+        if (successFetchCalls === 3) {
+          return {
+            ok: false,
+            status: 400,
+            text: async () =>
+              contentBlockedFixture,
           };
         }
 
@@ -1324,29 +1399,35 @@ async function validateContentBlockedRecoveryRuntime() {
   );
 
   if (
-    fetchCalls !== 2 ||
-    reservedPosts !== 2 ||
-    recoveryState.used !== 1 ||
-    postedInputs[0] !== primaryPrompt ||
-    postedInputs[1] !== recoveryPrompt ||
+    successFetchCalls !== 4 ||
+    successReservedPosts !== 4 ||
+    successState.used !== 3 ||
+    successState.classifierBlocks !== 1 ||
+    successInputs[0] !== primaryPrompt ||
+    successInputs.slice(1).some(
+      (input) => input !== recoveryPrompt,
+    ) ||
     generated?.buffer?.length !== 2048
   ) {
     throw new Error(
-      "TTS content-blocked runtime recovery self-test failed: " +
+      "TTS transient-aware recovery self-test failed: " +
       JSON.stringify({
-        fetchCalls,
-        reservedPosts,
-        recoveryUsed: recoveryState.used,
-        primaryUsed: postedInputs[0] === primaryPrompt,
-        recoveryPromptUsed:
-          postedInputs[1] === recoveryPrompt,
+        successFetchCalls,
+        successReservedPosts,
+        recoveryPostsUsed:
+          successState.used,
+        classifierBlocks:
+          successState.classifierBlocks,
         bytes: generated?.buffer?.length ?? null,
       }),
     );
   }
 
-  let unsafeFetchCalls = 0;
-  const unseenRecoveryState = { used: 0 };
+  let unseenFetchCalls = 0;
+  const unseenState = {
+    used: 0,
+    classifierBlocks: 0,
+  };
   let unseenFailure = null;
 
   try {
@@ -1354,181 +1435,19 @@ async function validateContentBlockedRecoveryRuntime() {
       "self-test-key",
       "Schedar",
       primaryPrompt,
-      8,
+      4,
       {
         spokenChunkSha256: textHash,
         recoveryPrompt,
         successfullySynthesizedTextHashes:
           new Set(),
         contentBlockedRecoveryState:
-          unseenRecoveryState,
+          unseenState,
         paceTtsRequest: async () => {},
         reserveTtsNetworkRequest: () => {},
         sleep: async () => {},
         fetch: async () => {
-          unsafeFetchCalls += 1;
-          return {
-            ok: false,
-            status: 400,
-            text: async () => contentBlockedFixture,
-          };
-        },
-      },
-    );
-  } catch (error) {
-    unseenFailure = error;
-  }
-
-  const unseenMessage = String(
-    unseenFailure?.message ?? unseenFailure ?? "",
-  );
-
-  if (
-    unsafeFetchCalls !== 1 ||
-    unseenRecoveryState.used !== 0 ||
-    !unseenMessage.includes(
-      "TTS_CONTENT_BLOCKED_NO_SAFE_RECOVERY",
-    )
-  ) {
-    throw new Error(
-      "TTS unseen-content fail-closed self-test failed: " +
-      JSON.stringify({
-        unsafeFetchCalls,
-        recoveryUsed: unseenRecoveryState.used,
-        unseenMessage,
-      }),
-    );
-  }
-
-  const retryBudgetState = { used: 0 };
-  const retryBudgetPostedInputs = [];
-  let retryBudgetFetchCalls = 0;
-  let retryBudgetReservedPosts = 0;
-  let retryBudgetFailure = null;
-
-  try {
-    await callTts(
-      "self-test-key",
-      "Schedar",
-      primaryPrompt,
-      8,
-      {
-        spokenChunkSha256: textHash,
-        recoveryPrompt,
-        successfullySynthesizedTextHashes:
-          new Set([textHash]),
-        contentBlockedRecoveryState:
-          retryBudgetState,
-        paceTtsRequest: async () => {},
-        reserveTtsNetworkRequest: () => {
-          retryBudgetReservedPosts += 1;
-        },
-        sleep: async () => {},
-        fetch: async (_url, request) => {
-          retryBudgetFetchCalls += 1;
-          const postedInput =
-            JSON.parse(
-              String(request?.body ?? "{}"),
-            ).input;
-
-          retryBudgetPostedInputs.push(
-            postedInput,
-          );
-
-          if (retryBudgetFetchCalls === 1) {
-            return {
-              ok: false,
-              status: 400,
-              text: async () =>
-                contentBlockedFixture,
-            };
-          }
-
-          return {
-            ok: false,
-            status: 500,
-            text: async () =>
-              JSON.stringify({
-                error: {
-                  message:
-                    "Temporary provider failure.",
-                  code: "internal",
-                },
-              }),
-          };
-        },
-      },
-    );
-  } catch (error) {
-    retryBudgetFailure = error;
-  }
-
-  const retryBudgetFailureMessage = String(
-    retryBudgetFailure?.message ??
-      retryBudgetFailure ??
-      "",
-  );
-
-  const firstCallRecoveryPosts =
-    retryBudgetPostedInputs.filter(
-      (input) => input === recoveryPrompt,
-    ).length;
-
-  if (
-    retryBudgetFetchCalls !== 3 ||
-    retryBudgetReservedPosts !== 3 ||
-    retryBudgetState.used !== 2 ||
-    retryBudgetPostedInputs[0] !==
-      primaryPrompt ||
-    firstCallRecoveryPosts !== 2 ||
-    !retryBudgetFailureMessage.includes(
-      "Gemini TTS generation POST HTTP 500",
-    )
-  ) {
-    throw new Error(
-      "TTS recovery POST budget retryable-path self-test failed: " +
-      JSON.stringify({
-        retryBudgetFetchCalls,
-        retryBudgetReservedPosts,
-        recoveryPostsUsed:
-          retryBudgetState.used,
-        firstCallRecoveryPosts,
-        retryBudgetFailureMessage,
-      }),
-    );
-  }
-
-  const postBudgetInputs = [];
-  let postBudgetFetchCalls = 0;
-  let postBudgetReservedPosts = 0;
-  let postBudgetFailure = null;
-
-  try {
-    await callTts(
-      "self-test-key",
-      "Schedar",
-      primaryPrompt,
-      8,
-      {
-        spokenChunkSha256: textHash,
-        recoveryPrompt,
-        successfullySynthesizedTextHashes:
-          new Set([textHash]),
-        contentBlockedRecoveryState:
-          retryBudgetState,
-        paceTtsRequest: async () => {},
-        reserveTtsNetworkRequest: () => {
-          postBudgetReservedPosts += 1;
-        },
-        sleep: async () => {},
-        fetch: async (_url, request) => {
-          postBudgetFetchCalls += 1;
-          postBudgetInputs.push(
-            JSON.parse(
-              String(request?.body ?? "{}"),
-            ).input,
-          );
-
+          unseenFetchCalls += 1;
           return {
             ok: false,
             status: 400,
@@ -1539,52 +1458,102 @@ async function validateContentBlockedRecoveryRuntime() {
       },
     );
   } catch (error) {
-    postBudgetFailure = error;
+    unseenFailure = error;
   }
 
-  const postBudgetFailureMessage = String(
-    postBudgetFailure?.message ??
-      postBudgetFailure ??
+  const unseenMessage = String(
+    unseenFailure?.message ??
+      unseenFailure ??
       "",
   );
 
-  const allRecoveryPostsSent =
-    firstCallRecoveryPosts +
-    postBudgetInputs.filter(
-      (input) => input === recoveryPrompt,
-    ).length;
-
   if (
-    postBudgetFetchCalls !== 1 ||
-    postBudgetReservedPosts !== 1 ||
-    postBudgetInputs[0] !== primaryPrompt ||
-    retryBudgetState.used !== 2 ||
-    allRecoveryPostsSent !== 2 ||
-    !postBudgetFailureMessage.includes(
-      "TTS_CONTENT_BLOCKED_RECOVERY_BUDGET_EXHAUSTED",
+    unseenFetchCalls !== 1 ||
+    unseenState.used !== 0 ||
+    unseenState.classifierBlocks !== 0 ||
+    !unseenMessage.includes(
+      "TTS_CONTENT_BLOCKED_NO_SAFE_RECOVERY",
     )
   ) {
     throw new Error(
-      "TTS third recovery POST refusal self-test failed: " +
+      "TTS unseen-content fail-closed self-test failed.",
+    );
+  }
+
+  const blockedState = {
+    used: 0,
+    classifierBlocks: 0,
+  };
+  let blockedFetchCalls = 0;
+  let blockedFailure = null;
+
+  try {
+    await callTts(
+      "self-test-key",
+      "Schedar",
+      primaryPrompt,
+      4,
+      {
+        spokenChunkSha256: textHash,
+        recoveryPrompt,
+        successfullySynthesizedTextHashes:
+          new Set([textHash]),
+        contentBlockedRecoveryState:
+          blockedState,
+        paceTtsRequest: async () => {},
+        reserveTtsNetworkRequest: () => {},
+        sleep: async () => {},
+        fetch: async () => {
+          blockedFetchCalls += 1;
+          return {
+            ok: false,
+            status: 400,
+            text: async () =>
+              contentBlockedFixture,
+          };
+        },
+      },
+    );
+  } catch (error) {
+    blockedFailure = error;
+  }
+
+  const blockedMessage = String(
+    blockedFailure?.message ??
+      blockedFailure ??
+      "",
+  );
+
+  if (
+    blockedFetchCalls !== 3 ||
+    blockedState.used !== 2 ||
+    blockedState.classifierBlocks !== 2 ||
+    !blockedMessage.includes(
+      "TTS_CONTENT_BLOCKED_CLASSIFIER_BUDGET_EXHAUSTED",
+    )
+  ) {
+    throw new Error(
+      "TTS classifier-block fail-closed self-test failed: " +
       JSON.stringify({
-        postBudgetFetchCalls,
-        postBudgetReservedPosts,
+        blockedFetchCalls,
         recoveryPostsUsed:
-          retryBudgetState.used,
-        allRecoveryPostsSent,
-        postBudgetFailureMessage,
+          blockedState.used,
+        classifierBlocks:
+          blockedState.classifierBlocks,
+        blockedMessage,
       }),
     );
   }
 
   console.log(
     "Dual-voice content-blocked recovery PASS: " +
-    "explicit TTS preamble; previously synthesized text only; " +
-    "actual recovery POST budget=2 across retryable responses; " +
-    "third recovery POST refused; unseen text fails closed.",
+    "previously synthesized text only; " +
+    "429/5xx transient attempts separated from classifier outcomes; " +
+    "production-like 400 -> 429 -> 400 -> audio recovery PASS; " +
+    "recovery network cap 4; classifier-block cap 2; " +
+    "unseen text fails closed.",
   );
 }
-
 async function downloadAudioUri(apiKey, audio, voice) {
   const uri = String(audio?.uri ?? "");
 
@@ -2123,41 +2092,85 @@ async function callTts(
           contentBlockedRecoveryEligibleForText({
             textHash,
             recoveryPrompt,
-            classifierRecoveryUsed,
             successfulTextHashes,
           });
 
-        if (
-          eligibleForRecovery &&
-          !contentBlockedRecoveryBudgetAvailable(
-            recoveryState,
-          )
-        ) {
+        if (!eligibleForRecovery) {
+          throw new Error(
+            "TTS_CONTENT_BLOCKED_NO_SAFE_RECOVERY: " +
+            `voice=${voice}; textHash=${textHash || "none"}; ` +
+            "reason=transcript-not-previously-synthesized; " +
+            responseText.slice(0, 900),
+          );
+        }
+
+        if (!classifierRecoveryUsed) {
+          if (
+            attempt < MAX_TTS_ATTEMPTS_PER_CHUNK &&
+            canEnterContentBlockedRecovery({
+              textHash,
+              recoveryPrompt,
+              successfulTextHashes,
+              recoveryState,
+            })
+          ) {
+            classifierRecoveryUsed = true;
+            activePrompt = recoveryPrompt;
+
+            console.log(
+              "Gemini TTS content_blocked classifier recovery; " +
+              "switching to explicit synthesis framing. " +
+              `nextRecoveryPost=${contentBlockedRecoveryPostsUsed(recoveryState) + 1}/` +
+              `${MAX_CONTENT_BLOCKED_RECOVERY_POSTS}; ` +
+              `classifierBlocks=${contentBlockedClassifierBlocksSeen(recoveryState)}/` +
+              `${MAX_CONTENT_BLOCKED_CLASSIFIER_BLOCKS}; ` +
+              `generationRequestsUsed=${ttsNetworkRequests}.`,
+            );
+
+            continue;
+          }
+
           throw new Error(
             "TTS_CONTENT_BLOCKED_RECOVERY_BUDGET_EXHAUSTED: " +
             `voice=${voice}; textHash=${textHash || "none"}; ` +
             `recoveryPostsUsed=${contentBlockedRecoveryPostsUsed(recoveryState)}/` +
             `${MAX_CONTENT_BLOCKED_RECOVERY_POSTS}; ` +
-            "eligible transcript cannot consume a third recovery POST.",
+            `classifierBlocks=${contentBlockedClassifierBlocksSeen(recoveryState)}/` +
+            `${MAX_CONTENT_BLOCKED_CLASSIFIER_BLOCKS};`,
+          );
+        }
+
+        const classifierBlockNumber =
+          recordContentBlockedClassifierBlock(
+            recoveryState,
+          );
+
+        if (
+          classifierBlockNumber >=
+          MAX_CONTENT_BLOCKED_CLASSIFIER_BLOCKS
+        ) {
+          throw new Error(
+            "TTS_CONTENT_BLOCKED_CLASSIFIER_BUDGET_EXHAUSTED: " +
+            `voice=${voice}; textHash=${textHash || "none"}; ` +
+            `classifierBlocks=${classifierBlockNumber}/` +
+            `${MAX_CONTENT_BLOCKED_CLASSIFIER_BLOCKS}; ` +
+            `recoveryPostsUsed=${contentBlockedRecoveryPostsUsed(recoveryState)}/` +
+            `${MAX_CONTENT_BLOCKED_RECOVERY_POSTS}; ` +
+            responseText.slice(0, 900),
           );
         }
 
         if (
           attempt < MAX_TTS_ATTEMPTS_PER_CHUNK &&
-          canRecoverContentBlocked({
-            textHash,
-            recoveryPrompt,
-            classifierRecoveryUsed,
-            successfulTextHashes,
+          contentBlockedRecoveryBudgetAvailable(
             recoveryState,
-          })
+          )
         ) {
-          classifierRecoveryUsed = true;
-          activePrompt = recoveryPrompt;
-
           console.log(
-            "Gemini TTS content_blocked classifier recovery; " +
-            "retrying same transcript with explicit synthesis framing. " +
+            "Gemini TTS content_blocked recovery classifier retry; " +
+            "same exact transcript and explicit synthesis framing. " +
+            `classifierBlocks=${classifierBlockNumber}/` +
+            `${MAX_CONTENT_BLOCKED_CLASSIFIER_BLOCKS}; ` +
             `nextRecoveryPost=${contentBlockedRecoveryPostsUsed(recoveryState) + 1}/` +
             `${MAX_CONTENT_BLOCKED_RECOVERY_POSTS}; ` +
             `generationRequestsUsed=${ttsNetworkRequests}.`,
@@ -2167,14 +2180,14 @@ async function callTts(
         }
 
         throw new Error(
-          "TTS_CONTENT_BLOCKED_NO_SAFE_RECOVERY: " +
+          "TTS_CONTENT_BLOCKED_RECOVERY_BUDGET_EXHAUSTED: " +
           `voice=${voice}; textHash=${textHash || "none"}; ` +
-          `recoveryUsed=${classifierRecoveryUsed}; ` +
-          `globalRecoveryPosts=${contentBlockedRecoveryPostsUsed(recoveryState)}; ` +
-          responseText.slice(0, 900),
+          `recoveryPostsUsed=${contentBlockedRecoveryPostsUsed(recoveryState)}/` +
+          `${MAX_CONTENT_BLOCKED_RECOVERY_POSTS}; ` +
+          `classifierBlocks=${classifierBlockNumber}/` +
+          `${MAX_CONTENT_BLOCKED_CLASSIFIER_BLOCKS};`,
         );
       }
-
       const error = new Error(
         `Gemini TTS generation POST HTTP ${response.status}: ` +
         responseText.slice(0, 900),
