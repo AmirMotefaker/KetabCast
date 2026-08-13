@@ -65,6 +65,29 @@ const contentBlockedRecoveryState = {
 };
 const successfullySynthesizedTextHashes = new Set();
 
+function seedSuccessfulTextHashFromCheckpoint({
+  generated,
+  textHash,
+  successfulTextHashes =
+    successfullySynthesizedTextHashes,
+}) {
+  if (!generated?.checkpointReused) {
+    return false;
+  }
+
+  const normalizedTextHash = String(textHash ?? "");
+
+  if (!/^[0-9a-f]{64}$/u.test(normalizedTextHash)) {
+    throw new Error(
+      "TTS_CHECKPOINT_RECOVERY_TEXT_HASH_INVALID: " +
+      normalizedTextHash,
+    );
+  }
+
+  successfulTextHashes.add(normalizedTextHash);
+  return true;
+}
+
 function parseArgs(argv) {
   const options = {
     batch: "batch-a",
@@ -506,6 +529,96 @@ function contentBlockedRecoveryEligibleForText({
     Boolean(textHash) &&
     Boolean(recoveryPrompt) &&
     successfulTextHashes.has(textHash)
+  );
+}
+
+function validateCheckpointRecoveryEligibilitySeeding() {
+  const textHash = sha256(
+    "checkpoint recovery eligibility self-test",
+  );
+  const recoveryPrompt =
+    "explicit synthesis recovery self-test";
+  const successfulTextHashes = new Set();
+
+  if (
+    contentBlockedRecoveryEligibleForText({
+      textHash,
+      recoveryPrompt,
+      successfulTextHashes,
+    })
+  ) {
+    throw new Error(
+      "Checkpoint recovery seeding precondition failed.",
+    );
+  }
+
+  const seeded =
+    seedSuccessfulTextHashFromCheckpoint({
+      generated: {
+        checkpointReused: true,
+      },
+      textHash,
+      successfulTextHashes,
+    });
+
+  if (
+    !seeded ||
+    !successfulTextHashes.has(textHash) ||
+    !contentBlockedRecoveryEligibleForText({
+      textHash,
+      recoveryPrompt,
+      successfulTextHashes,
+    })
+  ) {
+    throw new Error(
+      "Verified checkpoint recovery eligibility self-test failed.",
+    );
+  }
+
+  const unverifiedTextHashes = new Set();
+  const unverifiedSeeded =
+    seedSuccessfulTextHashFromCheckpoint({
+      generated: {
+        checkpointReused: false,
+      },
+      textHash,
+      successfulTextHashes:
+        unverifiedTextHashes,
+    });
+
+  let invalidHashRejected = false;
+
+  try {
+    seedSuccessfulTextHashFromCheckpoint({
+      generated: {
+        checkpointReused: true,
+      },
+      textHash: "not-a-sha256",
+      successfulTextHashes:
+        new Set(),
+    });
+  } catch (error) {
+    invalidHashRejected =
+      String(error?.message ?? error).includes(
+        "TTS_CHECKPOINT_RECOVERY_TEXT_HASH_INVALID",
+      );
+  }
+
+  if (
+    unverifiedSeeded ||
+    unverifiedTextHashes.size !== 0 ||
+    !invalidHashRejected
+  ) {
+    throw new Error(
+      "Checkpoint recovery fail-closed self-test failed.",
+    );
+  }
+
+  console.log(
+    "Dual-voice checkpoint recovery seeding PASS: " +
+    "provenance-verified checkpoint hash restores " +
+    "existing content_blocked recovery eligibility; " +
+    "unverified resume remains fail closed.",
   );
 }
 
@@ -3069,6 +3182,22 @@ async function renderVariant({
       chunk,
     });
 
+    if (
+      seedSuccessfulTextHashFromCheckpoint({
+        generated,
+        textHash: chunkTextSha256,
+      })
+    ) {
+      console.log(
+        "Dual-voice verified checkpoint seeded " +
+        "content-recovery eligibility: " +
+        `${path
+          .relative(outRoot, wav)
+          .replaceAll("\\", "/")}; ` +
+        `textHash=${chunkTextSha256}.`,
+      );
+    }
+
     if (!generated) {
       generated = await resumePendingInteraction({
         apiKey,
@@ -3362,6 +3491,7 @@ async function main() {
   validateInteractionPolling();
   await validateInteractionResolutionRuntime();
   await validatePendingInteractionPersistenceContract();
+  validateCheckpointRecoveryEligibilitySeeding();
   await validateContentBlockedRecoveryRuntime();
 
   const selectedEpisodes = slugs.map((slug) => {
