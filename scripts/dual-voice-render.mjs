@@ -854,6 +854,7 @@ function validateRetryPolicy() {
 
 const INTERACTION_POLL_INTERVAL_MS = 5000;
 const INTERACTION_POLL_TIMEOUT_MS = 15 * 60 * 1000;
+const MAX_PENDING_INTERACTION_POLL_WINDOWS = 2;
 const MAX_INTERACTION_GET_ATTEMPTS = 6;
 const MAX_COMPLETED_AUDIO_MATERIALIZATION_POLLS =
   Math.floor(
@@ -1377,6 +1378,7 @@ async function validatePendingInteractionPersistenceContract() {
           spokenScriptSha256: sha256(spokenText),
           spokenChunkSha256: sha256(chunk.text),
           interactionId: "v1_pending-resume-self-test",
+          pollWindowsUsed: 1,
           sourceRunId: 123,
           sourceSha:
             "1111111111111111111111111111111111111111",
@@ -1410,22 +1412,84 @@ async function validatePendingInteractionPersistenceContract() {
     },
   });
 
+  const persistedResume = JSON.parse(
+    await readFile(selfTestPending, "utf8"),
+  );
   await unlink(selfTestPending).catch(() => {});
 
   if (
     resumedId !== "v1_pending-resume-self-test" ||
     !resumed?.interactionResumed ||
-    resumed?.buffer?.length !== 2048
+    resumed?.buffer?.length !== 2048 ||
+    Number(persistedResume.pollWindowsUsed) !== 2
   ) {
     throw new Error(
       "Pending Interaction same-ID resume self-test failed.",
     );
   }
 
+  let staleResolveCalls = 0;
+  const stale = await resumePendingInteraction({
+    apiKey: "self-test-key",
+    resumeMetadata: {
+      schemaVersion: 1,
+      batch: "batch-a-atomic",
+      chunks: [],
+      pendingInteractions: [
+        {
+          schemaVersion: 1,
+          bookSlug: "atomic-habits",
+          role: "female",
+          providerVoice: "Sulafat",
+          chunkIndex: chunk.index,
+          relativePath:
+            "atomic-habits/female/chunks/01.wav",
+          spokenScriptSha256: sha256(spokenText),
+          spokenChunkSha256: sha256(chunk.text),
+          interactionId:
+            "v1_pending-stale-self-test",
+          pollWindowsUsed:
+            MAX_PENDING_INTERACTION_POLL_WINDOWS,
+          sourceRunId: 789,
+          sourceSha:
+            "3333333333333333333333333333333333333333",
+          artifactId: 987,
+          artifactDigest:
+            "sha256:" + "4".repeat(64),
+        },
+      ],
+    },
+    pendingFile: selfTestPending,
+    outRoot: selfTestRoot,
+    wav: selfTestWav,
+    bookSlug: "atomic-habits",
+    role: "female",
+    voice: "Sulafat",
+    spokenText,
+    chunk,
+    dependencies: {
+      resolveAcceptedInteraction: async () => {
+        staleResolveCalls += 1;
+        throw new Error(
+          "Stale Interaction must not be polled again.",
+        );
+      },
+    },
+  });
+
+  await unlink(selfTestPending).catch(() => {});
+
+  if (stale !== null || staleResolveCalls !== 0) {
+    throw new Error(
+      "Stale pending Interaction retirement self-test failed.",
+    );
+  }
+
   console.log(
     "Dual-voice pending Interaction checkpoint PASS: " +
     "accepted ID persists before polling; verified pending ID resumes " +
-    "without a generation POST.",
+    "without a generation POST; poll windows are bounded at 2; " +
+    "stale ID retires before one fresh generation POST.",
   );
 }
 
@@ -2609,6 +2673,7 @@ async function writePendingInteractionCheckpoint({
   spokenText,
   chunk,
   interactionId: acceptedInteractionId,
+  pollWindowsUsed,
   reusedFrom,
 }) {
   if (
@@ -2616,6 +2681,20 @@ async function writePendingInteractionCheckpoint({
     !/^\S{16,512}$/u.test(acceptedInteractionId)
   ) {
     throw new Error("TTS_PENDING_INTERACTION_ID_INVALID");
+  }
+
+  const normalizedPollWindowsUsed = Number(pollWindowsUsed);
+
+  if (
+    !Number.isInteger(normalizedPollWindowsUsed) ||
+    normalizedPollWindowsUsed < 1 ||
+    normalizedPollWindowsUsed >
+      MAX_PENDING_INTERACTION_POLL_WINDOWS
+  ) {
+    throw new Error(
+      "TTS_PENDING_INTERACTION_POLL_WINDOW_INVALID: " +
+      String(pollWindowsUsed),
+    );
   }
 
   await mkdir(path.dirname(pendingFile), { recursive: true });
@@ -2633,6 +2712,7 @@ async function writePendingInteractionCheckpoint({
     spokenScriptSha256: sha256(spokenText),
     spokenChunkSha256: sha256(chunk.text),
     interactionId: acceptedInteractionId,
+    pollWindowsUsed: normalizedPollWindowsUsed,
     sourceCodeSha:
       process.env.GITHUB_SHA?.trim() ||
       run("git", ["rev-parse", "HEAD"]),
@@ -2705,7 +2785,23 @@ function pendingInteractionEntry({
     );
   }
 
-  return entry;
+  const pollWindowsUsed = Number(entry.pollWindowsUsed);
+
+  if (
+    !Number.isInteger(pollWindowsUsed) ||
+    pollWindowsUsed < 1 ||
+    pollWindowsUsed >
+      MAX_PENDING_INTERACTION_POLL_WINDOWS
+  ) {
+    throw new Error(
+      `DUAL_VOICE_PENDING_INTERACTION_BUDGET_INVALID: ${relativePath}`,
+    );
+  }
+
+  return {
+    ...entry,
+    pollWindowsUsed,
+  };
 }
 
 async function resumePendingInteraction({
@@ -2734,6 +2830,27 @@ async function resumePendingInteraction({
 
   if (!entry) return null;
 
+  if (
+    entry.pollWindowsUsed >=
+    MAX_PENDING_INTERACTION_POLL_WINDOWS
+  ) {
+    await unlink(pendingFile).catch(() => {});
+
+    console.log(
+      "Dual-voice stale pending Interaction retired: " +
+      `${path.relative(outRoot, wav).replaceAll("\\", "/")}; ` +
+      `sourceRun=${entry.sourceRunId}; ` +
+      `windows=${entry.pollWindowsUsed}/` +
+      `${MAX_PENDING_INTERACTION_POLL_WINDOWS}; ` +
+      "allowing one fresh generation POST.",
+    );
+
+    return null;
+  }
+
+  const nextPollWindowsUsed =
+    entry.pollWindowsUsed + 1;
+
   await writePendingInteractionCheckpoint({
     pendingFile,
     outRoot,
@@ -2744,6 +2861,7 @@ async function resumePendingInteraction({
     spokenText,
     chunk,
     interactionId: String(entry.interactionId),
+    pollWindowsUsed: nextPollWindowsUsed,
     reusedFrom: {
       sourceRunId: Number(entry.sourceRunId),
       sourceSha: String(entry.sourceSha),
@@ -2756,7 +2874,9 @@ async function resumePendingInteraction({
     `Dual-voice pending Interaction resume PASS: ` +
     `${path.relative(outRoot, wav).replaceAll("\\", "/")}; ` +
     `sourceRun=${entry.sourceRunId}; ` +
-    `interactionId=${entry.interactionId}.`,
+    `interactionId=${entry.interactionId}; ` +
+    `windows=${nextPollWindowsUsed}/` +
+    `${MAX_PENDING_INTERACTION_POLL_WINDOWS}.`,
   );
 
   const resolveInteraction =
@@ -2985,6 +3105,7 @@ async function renderVariant({
                 spokenText,
                 chunk,
                 interactionId: acceptedInteractionId,
+                pollWindowsUsed: 1,
                 reusedFrom: null,
               });
             },
