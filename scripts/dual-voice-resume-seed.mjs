@@ -149,6 +149,10 @@ function parseArgs(argv) {
   return options;
 }
 
+function validInteractionId(value) {
+  return /^\S{16,512}$/u.test(String(value ?? ""));
+}
+
 function selfTest() {
   const paragraph = (word, count) =>
     Array.from({ length: count }, (_, i) => `${word}${i}`).join(" ");
@@ -170,7 +174,20 @@ function selfTest() {
     throw new Error("Resume seed deterministic chunk self-test failed.");
   }
 
-  console.log("Dual-voice resume seed self-test PASS.");
+  if (
+    !validInteractionId("v1_pending-resume-self-test") ||
+    validInteractionId("") ||
+    validInteractionId("contains whitespace")
+  ) {
+    throw new Error(
+      "Resume seed pending Interaction ID self-test failed.",
+    );
+  }
+
+  console.log(
+    "Dual-voice resume seed self-test PASS: " +
+    "deterministic chunks + pending Interaction ID contract.",
+  );
 }
 
 async function main() {
@@ -225,6 +242,7 @@ async function main() {
       "sha256:a79747db4075ad1dd705d58165cb3b82ef8f8018b51bce7f6e1399051e914f36";
 
   const entries = [];
+  const pendingInteractions = [];
 
   for (const bookSlug of BATCHES[options.batch]) {
     const spokenScriptFile = path.join(
@@ -262,59 +280,114 @@ async function main() {
         const relativePath =
           `${bookSlug}/${role}/chunks/${prefix}.wav`;
         const sourceWav = path.join(seedRoot, relativePath);
+        const hasWav = await exists(sourceWav);
 
-        if (!(await exists(sourceWav))) continue;
+        if (hasWav) {
+          const wavBytes = await readFile(sourceWav);
 
-        const wavBytes = await readFile(sourceWav);
+          if (wavBytes.length < 2048) {
+            throw new Error(`Checkpoint WAV too small: ${relativePath}`);
+          }
 
-        if (wavBytes.length < 2048) {
-          throw new Error(`Checkpoint WAV too small: ${relativePath}`);
+          const duration = durationSeconds(sourceWav);
+          const sidecar = path.join(
+            seedRoot,
+            bookSlug,
+            role,
+            "chunks",
+            `${prefix}.checkpoint.json`,
+          );
+
+          let legacyReindexed = true;
+
+          if (await exists(sidecar)) {
+            const previous = JSON.parse(await readFile(sidecar, "utf8"));
+            const expectedWavSha = sha256(wavBytes);
+            const expectedChunkSha = sha256(chunk.text);
+
+            if (
+              previous.bookSlug !== bookSlug ||
+              previous.role !== role ||
+              previous.providerVoice !== providerVoice ||
+              previous.chunkIndex !== chunk.index ||
+              previous.spokenScriptSha256 !== spokenScriptSha256 ||
+              previous.spokenChunkSha256 !== expectedChunkSha ||
+              previous.wavSha256 !== expectedWavSha ||
+              previous.sourceCodeSha !== options.sourceSha ||
+              Number(previous.sourceRunId) !== Number(options.sourceRun)
+            ) {
+              throw new Error(
+                `Existing checkpoint sidecar mismatch: ${relativePath}`,
+              );
+            }
+
+            legacyReindexed = false;
+          } else if (!knownLegacySource) {
+            throw new Error(
+              `Legacy checkpoint without sidecar is not allowlisted: ${relativePath}`,
+            );
+          }
+
+          const destination = path.join(outRoot, relativePath);
+          await mkdir(path.dirname(destination), { recursive: true });
+          await copyFile(sourceWav, destination);
+
+          entries.push({
+            schemaVersion: 1,
+            bookSlug,
+            role,
+            providerVoice,
+            chunkIndex: chunk.index,
+            relativePath,
+            spokenScriptSha256,
+            spokenChunkSha256: sha256(chunk.text),
+            wavSha256: sha256(wavBytes),
+            durationSeconds: Number(duration.toFixed(3)),
+            sourceRunId: Number(options.sourceRun),
+            sourceSha: options.sourceSha,
+            artifactId: Number(options.artifactId),
+            artifactDigest: options.artifactDigest,
+            legacyReindexed,
+          });
+
+          continue;
         }
 
-        const duration = durationSeconds(sourceWav);
-        const sidecar = path.join(
+        const pendingSidecar = path.join(
           seedRoot,
           bookSlug,
           role,
           "chunks",
-          `${prefix}.checkpoint.json`,
+          `${prefix}.interaction.json`,
         );
 
-        let legacyReindexed = true;
+        if (!(await exists(pendingSidecar))) continue;
 
-        if (await exists(sidecar)) {
-          const previous = JSON.parse(await readFile(sidecar, "utf8"));
-          const expectedWavSha = sha256(wavBytes);
-          const expectedChunkSha = sha256(chunk.text);
+        const previous = JSON.parse(
+          await readFile(pendingSidecar, "utf8"),
+        );
+        const expectedChunkSha = sha256(chunk.text);
 
-          if (
-            previous.bookSlug !== bookSlug ||
-            previous.role !== role ||
-            previous.providerVoice !== providerVoice ||
-            previous.chunkIndex !== chunk.index ||
-            previous.spokenScriptSha256 !== spokenScriptSha256 ||
-            previous.spokenChunkSha256 !== expectedChunkSha ||
-            previous.wavSha256 !== expectedWavSha ||
-            previous.sourceCodeSha !== options.sourceSha ||
-            Number(previous.sourceRunId) !== Number(options.sourceRun)
-          ) {
-            throw new Error(
-              `Existing checkpoint sidecar mismatch: ${relativePath}`,
-            );
-          }
-
-          legacyReindexed = false;
-        } else if (!knownLegacySource) {
+        if (
+          previous.schemaVersion !== 1 ||
+          previous.kind !== "pending-interaction" ||
+          previous.bookSlug !== bookSlug ||
+          previous.role !== role ||
+          previous.providerVoice !== providerVoice ||
+          previous.chunkIndex !== chunk.index ||
+          previous.relativePath !== relativePath ||
+          previous.spokenScriptSha256 !== spokenScriptSha256 ||
+          previous.spokenChunkSha256 !== expectedChunkSha ||
+          !validInteractionId(previous.interactionId) ||
+          previous.sourceCodeSha !== options.sourceSha ||
+          Number(previous.sourceRunId) !== Number(options.sourceRun)
+        ) {
           throw new Error(
-            `Legacy checkpoint without sidecar is not allowlisted: ${relativePath}`,
+            `Pending Interaction sidecar mismatch: ${relativePath}`,
           );
         }
 
-        const destination = path.join(outRoot, relativePath);
-        await mkdir(path.dirname(destination), { recursive: true });
-        await copyFile(sourceWav, destination);
-
-        entries.push({
+        pendingInteractions.push({
           schemaVersion: 1,
           bookSlug,
           role,
@@ -322,21 +395,24 @@ async function main() {
           chunkIndex: chunk.index,
           relativePath,
           spokenScriptSha256,
-          spokenChunkSha256: sha256(chunk.text),
-          wavSha256: sha256(wavBytes),
-          durationSeconds: Number(duration.toFixed(3)),
+          spokenChunkSha256: expectedChunkSha,
+          interactionId: String(previous.interactionId),
           sourceRunId: Number(options.sourceRun),
           sourceSha: options.sourceSha,
           artifactId: Number(options.artifactId),
           artifactDigest: options.artifactDigest,
-          legacyReindexed,
         });
       }
     }
   }
 
-  if (entries.length === 0) {
-    throw new Error("No reusable checkpoint WAV was found.");
+  if (
+    entries.length === 0 &&
+    pendingInteractions.length === 0
+  ) {
+    throw new Error(
+      "No reusable checkpoint WAV or pending Interaction was found.",
+    );
   }
 
   const index = {
@@ -347,6 +423,7 @@ async function main() {
     artifactId: Number(options.artifactId),
     artifactDigest: options.artifactDigest,
     chunks: entries,
+    pendingInteractions,
   };
 
   await mkdir(outRoot, { recursive: true });
@@ -357,7 +434,8 @@ async function main() {
   );
 
   console.log(
-    `Dual-voice resume seed PASS: ${entries.length} verified chunk(s) restored.`,
+    `Dual-voice resume seed PASS: ${entries.length} verified chunk(s) + ` +
+    `${pendingInteractions.length} pending Interaction(s) restored.`,
   );
 }
 

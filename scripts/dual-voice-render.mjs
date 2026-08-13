@@ -1275,6 +1275,160 @@ async function validateInteractionResolutionRuntime() {
   );
 }
 
+async function validatePendingInteractionPersistenceContract() {
+  const events = [];
+  let fetchCalls = 0;
+
+  const generated = await callTts(
+    "self-test-key",
+    "Sulafat",
+    "pending persistence self-test",
+    1,
+    {
+      paceTtsRequest: async () => {},
+      reserveTtsNetworkRequest: () => {},
+      sleep: async () => {},
+      fetch: async () => {
+        fetchCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          text: async () =>
+            JSON.stringify({
+              id: "v1_pending-persistence-self-test",
+              status: "in_progress",
+              steps: [],
+            }),
+        };
+      },
+      onAcceptedInteraction: async ({
+        interactionId: acceptedInteractionId,
+      }) => {
+        events.push(`persist:${acceptedInteractionId}`);
+      },
+      resolveAcceptedInteraction: async (
+        _apiKey,
+        interaction,
+      ) => {
+        events.push(`resolve:${interaction.id}`);
+        return {
+          buffer: Buffer.alloc(2048, 5),
+          mimeType: "audio/l16",
+          sampleRate: PCM_SAMPLE_RATE,
+          channels: PCM_CHANNELS,
+        };
+      },
+    },
+  );
+
+  if (
+    fetchCalls !== 1 ||
+    events.length !== 2 ||
+    events[0] !==
+      "persist:v1_pending-persistence-self-test" ||
+    events[1] !==
+      "resolve:v1_pending-persistence-self-test" ||
+    generated?.buffer?.length !== 2048
+  ) {
+    throw new Error(
+      "Pending Interaction persistence ordering self-test failed: " +
+      JSON.stringify({
+        fetchCalls,
+        events,
+        bytes: generated?.buffer?.length ?? null,
+      }),
+    );
+  }
+
+  const spokenText =
+    "الف ".repeat(600).trim() +
+    "\n\n" +
+    "ب ".repeat(600).trim();
+  const chunk = buildChunks(spokenText)[0];
+  const selfTestRoot = path.resolve(".dual-voice-validate");
+  const selfTestWav = path.join(
+    selfTestRoot,
+    "atomic-habits",
+    "female",
+    "chunks",
+    "01.wav",
+  );
+  const selfTestPending = path.join(
+    selfTestRoot,
+    "pending-self-test.interaction.json",
+  );
+  let resumedId = null;
+
+  const resumed = await resumePendingInteraction({
+    apiKey: "self-test-key",
+    resumeMetadata: {
+      schemaVersion: 1,
+      batch: "batch-a-atomic",
+      chunks: [],
+      pendingInteractions: [
+        {
+          schemaVersion: 1,
+          bookSlug: "atomic-habits",
+          role: "female",
+          providerVoice: "Sulafat",
+          chunkIndex: chunk.index,
+          relativePath:
+            "atomic-habits/female/chunks/01.wav",
+          spokenScriptSha256: sha256(spokenText),
+          spokenChunkSha256: sha256(chunk.text),
+          interactionId: "v1_pending-resume-self-test",
+          sourceRunId: 123,
+          sourceSha:
+            "1111111111111111111111111111111111111111",
+          artifactId: 456,
+          artifactDigest:
+            "sha256:" + "2".repeat(64),
+        },
+      ],
+    },
+    pendingFile: selfTestPending,
+    outRoot: selfTestRoot,
+    wav: selfTestWav,
+    bookSlug: "atomic-habits",
+    role: "female",
+    voice: "Sulafat",
+    spokenText,
+    chunk,
+    dependencies: {
+      resolveAcceptedInteraction: async (
+        _apiKey,
+        interaction,
+      ) => {
+        resumedId = interaction.id;
+        return {
+          buffer: Buffer.alloc(2048, 6),
+          mimeType: "audio/l16",
+          sampleRate: PCM_SAMPLE_RATE,
+          channels: PCM_CHANNELS,
+        };
+      },
+    },
+  });
+
+  await unlink(selfTestPending).catch(() => {});
+
+  if (
+    resumedId !== "v1_pending-resume-self-test" ||
+    !resumed?.interactionResumed ||
+    resumed?.buffer?.length !== 2048
+  ) {
+    throw new Error(
+      "Pending Interaction same-ID resume self-test failed.",
+    );
+  }
+
+  console.log(
+    "Dual-voice pending Interaction checkpoint PASS: " +
+    "accepted ID persists before polling; verified pending ID resumes " +
+    "without a generation POST.",
+  );
+}
+
 async function validateContentBlockedRecoveryRuntime() {
   const text =
     "این متن فقط برای آزمون فنی سنتز گفتار است.";
@@ -2001,6 +2155,10 @@ async function callTts(
     String(options.spokenChunkSha256 ?? "");
   const recoveryPrompt =
     String(options.recoveryPrompt ?? "");
+  const onAcceptedInteraction =
+    typeof options.onAcceptedInteraction === "function"
+      ? options.onAcceptedInteraction
+      : null;
 
   const url =
     "https://generativelanguage.googleapis.com/v1beta/interactions";
@@ -2288,6 +2446,15 @@ async function callTts(
       continue;
     }
 
+    const acceptedId = interactionId(interaction);
+
+    if (acceptedId && onAcceptedInteraction) {
+      await onAcceptedInteraction({
+        interactionId: acceptedId,
+        interactionStatus: interactionStatus(interaction),
+      });
+    }
+
     const generated = await resolveInteraction(
       apiKey,
       interaction,
@@ -2374,9 +2541,17 @@ async function loadResumeMetadata(file) {
   if (
     parsed?.schemaVersion !== 1 ||
     typeof parsed?.batch !== "string" ||
-    !Array.isArray(parsed?.chunks)
+    !Array.isArray(parsed?.chunks) ||
+    (
+      parsed?.pendingInteractions !== undefined &&
+      !Array.isArray(parsed?.pendingInteractions)
+    )
   ) {
     throw new Error("DUAL_VOICE_RESUME_METADATA_INVALID");
+  }
+
+  if (!Array.isArray(parsed.pendingInteractions)) {
+    parsed.pendingInteractions = [];
   }
 
   return parsed;
@@ -2422,6 +2597,197 @@ async function writeChunkCheckpoint({
   );
 
   return checkpoint;
+}
+
+async function writePendingInteractionCheckpoint({
+  pendingFile,
+  outRoot,
+  wav,
+  bookSlug,
+  role,
+  voice,
+  spokenText,
+  chunk,
+  interactionId: acceptedInteractionId,
+  reusedFrom,
+}) {
+  if (
+    typeof acceptedInteractionId !== "string" ||
+    !/^\S{16,512}$/u.test(acceptedInteractionId)
+  ) {
+    throw new Error("TTS_PENDING_INTERACTION_ID_INVALID");
+  }
+
+  await mkdir(path.dirname(pendingFile), { recursive: true });
+
+  const pending = {
+    schemaVersion: 1,
+    kind: "pending-interaction",
+    bookSlug,
+    role,
+    providerVoice: voice,
+    chunkIndex: chunk.index,
+    relativePath: path
+      .relative(outRoot, wav)
+      .replaceAll("\\", "/"),
+    spokenScriptSha256: sha256(spokenText),
+    spokenChunkSha256: sha256(chunk.text),
+    interactionId: acceptedInteractionId,
+    sourceCodeSha:
+      process.env.GITHUB_SHA?.trim() ||
+      run("git", ["rev-parse", "HEAD"]),
+    sourceRunId:
+      Number(process.env.GITHUB_RUN_ID ?? 0) || null,
+    reusedFrom: reusedFrom ?? null,
+  };
+
+  await writeFile(
+    pendingFile,
+    `${JSON.stringify(pending, null, 2)}\n`,
+    "utf8",
+  );
+
+  return pending;
+}
+
+function pendingInteractionEntry({
+  resumeMetadata,
+  outRoot,
+  wav,
+  bookSlug,
+  role,
+  voice,
+  spokenText,
+  chunk,
+}) {
+  if (!resumeMetadata) return null;
+
+  const relativePath = path
+    .relative(outRoot, wav)
+    .replaceAll("\\", "/");
+
+  const entry = resumeMetadata.pendingInteractions.find(
+    (candidate) =>
+      String(candidate?.relativePath ?? "") === relativePath,
+  );
+
+  if (!entry) return null;
+
+  const expectedScriptSha = sha256(spokenText);
+  const expectedChunkSha = sha256(chunk.text);
+
+  if (
+    entry.bookSlug !== bookSlug ||
+    entry.role !== role ||
+    entry.providerVoice !== voice ||
+    Number(entry.chunkIndex) !== chunk.index ||
+    entry.spokenScriptSha256 !== expectedScriptSha ||
+    entry.spokenChunkSha256 !== expectedChunkSha ||
+    !/^\S{16,512}$/u.test(String(entry.interactionId ?? ""))
+  ) {
+    throw new Error(
+      `DUAL_VOICE_PENDING_INTERACTION_PROVENANCE_MISMATCH: ${relativePath}`,
+    );
+  }
+
+  if (
+    !Number.isInteger(Number(entry.sourceRunId)) ||
+    Number(entry.sourceRunId) <= 0 ||
+    !/^[0-9a-f]{40}$/u.test(String(entry.sourceSha ?? "")) ||
+    !Number.isInteger(Number(entry.artifactId)) ||
+    Number(entry.artifactId) <= 0 ||
+    !/^sha256:[0-9a-f]{64}$/u.test(
+      String(entry.artifactDigest ?? ""),
+    )
+  ) {
+    throw new Error(
+      `DUAL_VOICE_PENDING_INTERACTION_SOURCE_INVALID: ${relativePath}`,
+    );
+  }
+
+  return entry;
+}
+
+async function resumePendingInteraction({
+  apiKey,
+  resumeMetadata,
+  pendingFile,
+  outRoot,
+  wav,
+  bookSlug,
+  role,
+  voice,
+  spokenText,
+  chunk,
+  dependencies = {},
+}) {
+  const entry = pendingInteractionEntry({
+    resumeMetadata,
+    outRoot,
+    wav,
+    bookSlug,
+    role,
+    voice,
+    spokenText,
+    chunk,
+  });
+
+  if (!entry) return null;
+
+  await writePendingInteractionCheckpoint({
+    pendingFile,
+    outRoot,
+    wav,
+    bookSlug,
+    role,
+    voice,
+    spokenText,
+    chunk,
+    interactionId: String(entry.interactionId),
+    reusedFrom: {
+      sourceRunId: Number(entry.sourceRunId),
+      sourceSha: String(entry.sourceSha),
+      artifactId: Number(entry.artifactId),
+      artifactDigest: String(entry.artifactDigest),
+    },
+  });
+
+  console.log(
+    `Dual-voice pending Interaction resume PASS: ` +
+    `${path.relative(outRoot, wav).replaceAll("\\", "/")}; ` +
+    `sourceRun=${entry.sourceRunId}; ` +
+    `interactionId=${entry.interactionId}.`,
+  );
+
+  const resolveInteraction =
+    dependencies.resolveAcceptedInteraction ??
+    resolveAcceptedInteraction;
+
+  const generated = await resolveInteraction(
+    apiKey,
+    {
+      id: String(entry.interactionId),
+      status: "in_progress",
+      steps: [],
+    },
+    voice,
+  );
+
+  if (!generated) {
+    throw new Error(
+      `TTS_RESUMED_INTERACTION_WITHOUT_AUDIO: ${entry.interactionId}`,
+    );
+  }
+
+  return {
+    ...generated,
+    interactionResumed: true,
+    reusedInteractionId: String(entry.interactionId),
+    reusedFromRunId: Number(entry.sourceRunId),
+    reusedFromSourceSha: String(entry.sourceSha),
+    reusedFromArtifactId: Number(entry.artifactId),
+    reusedFromArtifactDigest: String(entry.artifactDigest),
+  };
 }
 
 async function resumeGeneratedChunk({
@@ -2545,6 +2911,10 @@ async function renderVariant({
     const wav = path.join(chunksRoot, `${prefix}.wav`);
     const pause = path.join(chunksRoot, `${prefix}-pause.wav`);
     const temp = path.join(chunksRoot, `${prefix}.provider`);
+    const pendingFile = path.join(
+      chunksRoot,
+      `${prefix}.interaction.json`,
+    );
 
     const chunkTextSha256 = sha256(chunk.text);
     const prompt = directorPrompt(
@@ -2580,20 +2950,51 @@ async function renderVariant({
     });
 
     if (!generated) {
-      generated = await callTts(
+      generated = await resumePendingInteraction({
         apiKey,
+        resumeMetadata,
+        pendingFile,
+        outRoot,
+        wav,
+        bookSlug,
+        role,
         voice,
-        prompt,
-        plannedRequests,
-        {
-          spokenChunkSha256: chunkTextSha256,
-          recoveryPrompt,
-        },
-      );
+        spokenText,
+        chunk,
+      });
 
-      successfullySynthesizedTextHashes.add(
-        chunkTextSha256,
-      );
+      if (!generated) {
+        generated = await callTts(
+          apiKey,
+          voice,
+          prompt,
+          plannedRequests,
+          {
+            spokenChunkSha256: chunkTextSha256,
+            recoveryPrompt,
+            onAcceptedInteraction: async ({
+              interactionId: acceptedInteractionId,
+            }) => {
+              await writePendingInteractionCheckpoint({
+                pendingFile,
+                outRoot,
+                wav,
+                bookSlug,
+                role,
+                voice,
+                spokenText,
+                chunk,
+                interactionId: acceptedInteractionId,
+                reusedFrom: null,
+              });
+            },
+          },
+        );
+
+        successfullySynthesizedTextHashes.add(
+          chunkTextSha256,
+        );
+      }
 
       await providerToWav(generated, wav, temp);
     }
@@ -2612,17 +3013,20 @@ async function renderVariant({
       voice,
       spokenText,
       chunk,
-      reusedFrom: generated.checkpointReused
-        ? {
-            sourceRunId: generated.reusedFromRunId,
-            sourceSha: generated.reusedFromSourceSha,
-            artifactId: generated.reusedFromArtifactId,
-            artifactDigest:
-              generated.reusedFromArtifactDigest,
-          }
-        : null,
+      reusedFrom:
+        generated.checkpointReused ||
+        generated.interactionResumed
+          ? {
+              sourceRunId: generated.reusedFromRunId,
+              sourceSha: generated.reusedFromSourceSha,
+              artifactId: generated.reusedFromArtifactId,
+              artifactDigest:
+                generated.reusedFromArtifactDigest,
+            }
+          : null,
     });
 
+    await unlink(pendingFile).catch(() => {});
     await makeSilence(pause, chunk.pauseAfterMs);
 
     const chunkDuration = durationSeconds(wav);
@@ -2641,6 +3045,9 @@ async function renderVariant({
       sourceChannels: generated.channels,
       checkpointReused: Boolean(
         generated.checkpointReused,
+      ),
+      interactionResumed: Boolean(
+        generated.interactionResumed,
       ),
       reusedFromRunId:
         generated.reusedFromRunId ?? null,
@@ -2833,6 +3240,7 @@ async function main() {
   validateRetryPolicy();
   validateInteractionPolling();
   await validateInteractionResolutionRuntime();
+  await validatePendingInteractionPersistenceContract();
   await validateContentBlockedRecoveryRuntime();
 
   const selectedEpisodes = slugs.map((slug) => {
@@ -2916,6 +3324,8 @@ async function main() {
           artifactId: resumeMetadata.artifactId,
           artifactDigest: resumeMetadata.artifactDigest,
           restoredChunks: resumeMetadata.chunks.length,
+          restoredPendingInteractions:
+            resumeMetadata.pendingInteractions.length,
         }
       : null,
     assets: [],
