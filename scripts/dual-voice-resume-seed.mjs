@@ -10,6 +10,8 @@ import {
 import path from "node:path";
 import process from "node:process";
 
+const MAX_PENDING_INTERACTION_POLL_WINDOWS = 2;
+
 const BATCHES = Object.freeze({
   "batch-a": ["atomic-habits", "deep-work"],
   "batch-a-atomic": ["atomic-habits"],
@@ -153,6 +155,31 @@ function validInteractionId(value) {
   return /^\S{16,512}$/u.test(String(value ?? ""));
 }
 
+function pendingInteractionPollWindowsUsed(previous) {
+  const raw = previous?.pollWindowsUsed;
+
+  if (raw !== undefined && raw !== null) {
+    const explicit = Number(raw);
+
+    if (
+      !Number.isInteger(explicit) ||
+      explicit < 1 ||
+      explicit >
+        MAX_PENDING_INTERACTION_POLL_WINDOWS
+    ) {
+      throw new Error(
+        "Pending Interaction poll-window budget is invalid.",
+      );
+    }
+
+    return explicit;
+  }
+
+  return previous?.reusedFrom
+    ? MAX_PENDING_INTERACTION_POLL_WINDOWS
+    : 1;
+}
+
 function selfTest() {
   const paragraph = (word, count) =>
     Array.from({ length: count }, (_, i) => `${word}${i}`).join(" ");
@@ -184,9 +211,42 @@ function selfTest() {
     );
   }
 
+  const legacyInitial =
+    pendingInteractionPollWindowsUsed({});
+  const legacyResumed =
+    pendingInteractionPollWindowsUsed({
+      reusedFrom: { sourceRunId: 123 },
+    });
+  const explicitOne =
+    pendingInteractionPollWindowsUsed({
+      pollWindowsUsed: 1,
+    });
+  let invalidBudgetRejected = false;
+
+  try {
+    pendingInteractionPollWindowsUsed({
+      pollWindowsUsed: 3,
+    });
+  } catch {
+    invalidBudgetRejected = true;
+  }
+
+  if (
+    legacyInitial !== 1 ||
+    legacyResumed !==
+      MAX_PENDING_INTERACTION_POLL_WINDOWS ||
+    explicitOne !== 1 ||
+    !invalidBudgetRejected
+  ) {
+    throw new Error(
+      "Resume seed pending Interaction budget self-test failed.",
+    );
+  }
+
   console.log(
     "Dual-voice resume seed self-test PASS: " +
-    "deterministic chunks + pending Interaction ID contract.",
+    "deterministic chunks + pending Interaction ID contract + " +
+    "legacy/existing poll-window budget migration.",
   );
 }
 
@@ -367,6 +427,8 @@ async function main() {
           await readFile(pendingSidecar, "utf8"),
         );
         const expectedChunkSha = sha256(chunk.text);
+        const pollWindowsUsed =
+          pendingInteractionPollWindowsUsed(previous);
 
         if (
           previous.schemaVersion !== 1 ||
@@ -397,6 +459,7 @@ async function main() {
           spokenScriptSha256,
           spokenChunkSha256: expectedChunkSha,
           interactionId: String(previous.interactionId),
+          pollWindowsUsed,
           sourceRunId: Number(options.sourceRun),
           sourceSha: options.sourceSha,
           artifactId: Number(options.artifactId),
