@@ -14,6 +14,7 @@ const MAX_PENDING_INTERACTION_POLL_WINDOWS = 2;
 const MAX_TTS_SEGMENT_WORDS = 180;
 const MIN_TTS_SEGMENT_WORDS = 80;
 const MIN_AUDIO_SECONDS_PER_WORD = 0.25;
+const MAX_TTS_COVERAGE_CHILD_WORDS = 70;
 
 const BATCHES = Object.freeze({
   "batch-a": ["atomic-habits", "deep-work"],
@@ -238,6 +239,94 @@ function buildTtsSegments(text) {
     words: group.words,
   }));
 }
+
+function normalizedWordSequence(text) {
+  return String(text ?? "")
+    .replace(/[\u200c\u200f\u200e]/gu, " ")
+    .trim()
+    .split(/\s+/u)
+    .filter(Boolean);
+}
+
+function buildCoverageChildSegments(text) {
+  const source = String(text ?? "").trim();
+  const sentences = source
+    .split(/(?<=[.!?؟؛])\s+/u)
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (
+    sentences.length < 2 ||
+    sentences.some(
+      (sentence) =>
+        countWords(sentence) >
+          MAX_TTS_COVERAGE_CHILD_WORDS,
+    )
+  ) {
+    return [];
+  }
+
+  const groups = [];
+  let current = [];
+  let currentWords = 0;
+
+  const flush = () => {
+    if (current.length === 0) return;
+    groups.push({
+      parts: current,
+      words: currentWords,
+    });
+    current = [];
+    currentWords = 0;
+  };
+
+  for (const sentence of sentences) {
+    const sentenceWords = countWords(sentence);
+
+    if (
+      current.length > 0 &&
+      currentWords + sentenceWords >
+        MAX_TTS_COVERAGE_CHILD_WORDS
+    ) {
+      flush();
+    }
+
+    current.push(sentence);
+    currentWords += sentenceWords;
+  }
+
+  flush();
+
+  if (groups.length < 2) {
+    return [];
+  }
+
+  const children = groups.map((group, index) => ({
+    index,
+    text: group.parts.join(" ").trim(),
+    words: group.words,
+  }));
+
+  const originalWords = normalizedWordSequence(source);
+  const reconstructedWords = normalizedWordSequence(
+    children.map((child) => child.text).join(" "),
+  );
+
+  if (
+    originalWords.length !== reconstructedWords.length ||
+    originalWords.some(
+      (word, index) =>
+        word !== reconstructedWords[index],
+    )
+  ) {
+    throw new Error(
+      "TTS_COVERAGE_CHILD_TEXT_SEQUENCE_MISMATCH",
+    );
+  }
+
+  return children;
+}
+
 function segmentCountMetadataValid(value, segmentIndex) {
   const count = Number(value);
   const index = Number(segmentIndex);
@@ -332,6 +421,285 @@ function reanchorSegmentSidecar(
       sourceSha: String(previous.sourceCodeSha),
       previous: previous.reusedFrom ?? null,
     },
+  };
+}
+
+
+async function restoreCoverageChildState({
+  seedRoot,
+  outRoot,
+  bookSlug,
+  role,
+  providerVoice,
+  spokenText,
+  spokenScriptSha256,
+  chunk,
+  expectedChunkSha,
+  segment,
+  canonicalPrefix,
+  segmentPrefix,
+  options,
+}) {
+  const children =
+    buildCoverageChildSegments(segment.text);
+
+  if (children.length < 2) {
+    return {
+      checkpoints: 0,
+      pendingInteractions: 0,
+    };
+  }
+
+  let checkpoints = 0;
+  let pendingInteractions = 0;
+
+  for (const child of children) {
+    const childPrefix = String(
+      child.index + 1,
+    ).padStart(3, "0");
+    const childRelative =
+      `${bookSlug}/${role}/chunks/` +
+      `${canonicalPrefix}-segments/` +
+      `${segmentPrefix}-children/` +
+      `${childPrefix}.wav`;
+    const childRoot = path.join(
+      seedRoot,
+      bookSlug,
+      role,
+      "chunks",
+      `${canonicalPrefix}-segments`,
+      `${segmentPrefix}-children`,
+    );
+    const childWav = path.join(
+      childRoot,
+      `${childPrefix}.wav`,
+    );
+    const childCheckpoint = path.join(
+      childRoot,
+      `${childPrefix}.checkpoint.json`,
+    );
+    const childPending = path.join(
+      childRoot,
+      `${childPrefix}.interaction.json`,
+    );
+
+    if (
+      await exists(childWav) ||
+      await exists(childCheckpoint)
+    ) {
+      if (
+        !(await exists(childWav)) ||
+        !(await exists(childCheckpoint))
+      ) {
+        throw new Error(
+          `Coverage child checkpoint pair incomplete: ${childRelative}`,
+        );
+      }
+
+      const checkpoint = JSON.parse(
+        await readFile(
+          childCheckpoint,
+          "utf8",
+        ),
+      );
+      const wavBytes = await readFile(childWav);
+      const duration =
+        durationSeconds(childWav);
+
+      if (
+        checkpoint.schemaVersion !== 1 ||
+        checkpoint.kind !==
+          "tts-segment-checkpoint" ||
+        checkpoint.bookSlug !== bookSlug ||
+        checkpoint.role !== role ||
+        checkpoint.providerVoice !==
+          providerVoice ||
+        Number(
+          checkpoint.canonicalChunkIndex,
+        ) !== chunk.index ||
+        Number(checkpoint.segmentIndex) !==
+          child.index ||
+        !segmentCountMetadataValid(
+          checkpoint.segmentCount,
+          child.index,
+        ) ||
+        !segmentCountMetadataValid(
+          children.length,
+          child.index,
+        ) ||
+        Number(checkpoint.words) !==
+          child.words ||
+        checkpoint.relativePath !==
+          childRelative ||
+        checkpoint.spokenScriptSha256 !==
+          spokenScriptSha256 ||
+        checkpoint.spokenChunkSha256 !==
+          expectedChunkSha ||
+        checkpoint.spokenSegmentSha256 !==
+          sha256(child.text) ||
+        checkpoint.wavSha256 !==
+          sha256(wavBytes) ||
+        !segmentSourceProvenanceReusable(
+          checkpoint,
+          options,
+        )
+      ) {
+        throw new Error(
+          `Coverage child checkpoint mismatch: ${childRelative}`,
+        );
+      }
+
+      if (
+        Math.abs(
+          duration -
+          Number(
+            checkpoint.durationSeconds,
+          ),
+        ) > 0.05 ||
+        !audioCoverageSufficient(
+          duration,
+          child.words,
+        )
+      ) {
+        throw new Error(
+          `Coverage child checkpoint duration/coverage mismatch: ${childRelative}`,
+        );
+      }
+
+      const destination = path.join(
+        outRoot,
+        childRelative,
+      );
+      const checkpointDestination =
+        destination.replace(
+          /\.wav$/u,
+          ".checkpoint.json",
+        );
+      const reanchored =
+        reanchorSegmentSidecar(
+          checkpoint,
+          options,
+        );
+
+      await mkdir(
+        path.dirname(destination),
+        { recursive: true },
+      );
+      await copyFile(
+        childWav,
+        destination,
+      );
+      await writeFile(
+        checkpointDestination,
+        `${JSON.stringify(reanchored, null, 2)}\n`,
+        "utf8",
+      );
+
+      console.log(
+        "Resume seed coverage child checkpoint PASS: " +
+        `${childRelative}; oldRun=${checkpoint.sourceRunId}; ` +
+        `newRun=${reanchored.sourceRunId}.`,
+      );
+
+      checkpoints += 1;
+      continue;
+    }
+
+    if (await exists(childPending)) {
+      const pending = JSON.parse(
+        await readFile(
+          childPending,
+          "utf8",
+        ),
+      );
+      const pollWindowsUsed =
+        pendingInteractionPollWindowsUsed(
+          pending,
+        );
+
+      if (
+        pending.schemaVersion !== 1 ||
+        pending.kind !==
+          "pending-interaction-segment" ||
+        pending.bookSlug !== bookSlug ||
+        pending.role !== role ||
+        pending.providerVoice !==
+          providerVoice ||
+        Number(
+          pending.canonicalChunkIndex,
+        ) !== chunk.index ||
+        Number(pending.segmentIndex) !==
+          child.index ||
+        !segmentCountMetadataValid(
+          pending.segmentCount,
+          child.index,
+        ) ||
+        !segmentCountMetadataValid(
+          children.length,
+          child.index,
+        ) ||
+        Number(pending.words) !==
+          child.words ||
+        pending.relativePath !==
+          childRelative ||
+        pending.spokenScriptSha256 !==
+          spokenScriptSha256 ||
+        pending.spokenChunkSha256 !==
+          expectedChunkSha ||
+        pending.spokenSegmentSha256 !==
+          sha256(child.text) ||
+        !validInteractionId(
+          pending.interactionId,
+        ) ||
+        !segmentSourceProvenanceReusable(
+          pending,
+          options,
+        ) ||
+        pollWindowsUsed >
+          MAX_PENDING_INTERACTION_POLL_WINDOWS
+      ) {
+        throw new Error(
+          `Coverage child pending Interaction mismatch: ${childRelative}`,
+        );
+      }
+
+      const pendingDestination =
+        path.join(
+          outRoot,
+          childRelative.replace(
+            /\.wav$/u,
+            ".interaction.json",
+          ),
+        );
+      const reanchored =
+        reanchorSegmentSidecar(
+          pending,
+          options,
+        );
+
+      await mkdir(
+        path.dirname(pendingDestination),
+        { recursive: true },
+      );
+      await writeFile(
+        pendingDestination,
+        `${JSON.stringify(reanchored, null, 2)}\n`,
+        "utf8",
+      );
+
+      console.log(
+        "Resume seed coverage child pending PASS: " +
+        `${childRelative}; oldRun=${pending.sourceRunId}; ` +
+        `newRun=${reanchored.sourceRunId}.`,
+      );
+
+      pendingInteractions += 1;
+    }
+  }
+
+  return {
+    checkpoints,
+    pendingInteractions,
   };
 }
 
@@ -485,9 +853,30 @@ function selfTest() {
     99, 140, 110, 101, 138, 85,
   ];
 
+  const fallbackSentence = (prefix, count) =>
+    Array.from(
+      { length: count },
+      (_, index) => `${prefix}${index}`,
+    ).join(" ");
+  const fallbackSample = [
+    fallbackSentence("الف", 29) + ".",
+    fallbackSentence("ب", 32) + ".",
+    fallbackSentence("ج", 10) + ".",
+    fallbackSentence("د", 29) + ".",
+    fallbackSentence("ه", 10) + ".",
+  ].join(" ");
+  const coverageChildren =
+    buildCoverageChildSegments(fallbackSample);
+
   if (
     ttsSegmentWordPlan.join(",") !==
       expectedTtsSegmentWordPlan.join(",") ||
+    coverageChildren.map((child) => child.words).join(",") !==
+      "61,49" ||
+    coverageChildren
+      .map((child) => child.text)
+      .join(" ") !== fallbackSample ||
+    MAX_TTS_COVERAGE_CHILD_WORDS !== 70 ||
     !segmentCountMetadataValid(7, 0) ||
     !segmentCountMetadataValid(7, 1) ||
     !segmentCountMetadataValid(9, 1) ||
@@ -645,7 +1034,8 @@ function selfTest() {
     "terminal content_blocked counter contract + " +
     "long-form segment/duration coverage contract + " +
     "historical segment-count metadata migration contract + " +
-    "multi-generation segment provenance re-anchor contract.",
+    "multi-generation segment provenance re-anchor contract + " +
+    "sentence-boundary coverage child fallback restore contract.",
   );
 }
 
@@ -705,6 +1095,8 @@ async function main() {
   const contentBlockedFailures = [];
   let restoredSegmentCheckpoints = 0;
   let restoredSegmentPendingInteractions = 0;
+  let restoredCoverageChildCheckpoints = 0;
+  let restoredCoverageChildPendingInteractions = 0;
 
   for (const bookSlug of BATCHES[options.batch]) {
     const spokenScriptFile = path.join(
@@ -1147,6 +1539,34 @@ async function main() {
               );
             }
           }
+
+          if (
+            !(await exists(segmentWav)) &&
+            !(await exists(segmentCheckpoint)) &&
+            !(await exists(segmentPending))
+          ) {
+            const restoredChildren =
+              await restoreCoverageChildState({
+                seedRoot,
+                outRoot,
+                bookSlug,
+                role,
+                providerVoice,
+                spokenText,
+                spokenScriptSha256,
+                chunk,
+                expectedChunkSha,
+                segment,
+                canonicalPrefix,
+                segmentPrefix,
+                options,
+              });
+
+            restoredCoverageChildCheckpoints +=
+              restoredChildren.checkpoints;
+            restoredCoverageChildPendingInteractions +=
+              restoredChildren.pendingInteractions;
+          }
         }
 
         const pendingSidecar = path.join(
@@ -1287,7 +1707,9 @@ async function main() {
     pendingInteractions.length === 0 &&
     contentBlockedFailures.length === 0 &&
     restoredSegmentCheckpoints === 0 &&
-    restoredSegmentPendingInteractions === 0
+    restoredSegmentPendingInteractions === 0 &&
+    restoredCoverageChildCheckpoints === 0 &&
+    restoredCoverageChildPendingInteractions === 0
   ) {
     throw new Error(
       "No reusable checkpoint WAV or pending Interaction was found.",
@@ -1318,7 +1740,9 @@ async function main() {
     `${pendingInteractions.length} pending Interaction(s) + ` +
     `${contentBlockedFailures.length} terminal content_blocked failure(s) + ` +
     `${restoredSegmentCheckpoints} segment checkpoint(s) + ` +
-    `${restoredSegmentPendingInteractions} segment pending Interaction(s) restored.`,
+    `${restoredSegmentPendingInteractions} segment pending Interaction(s) + ` +
+    `${restoredCoverageChildCheckpoints} coverage child checkpoint(s) + ` +
+    `${restoredCoverageChildPendingInteractions} coverage child pending Interaction(s) restored.`,
   );
 }
 

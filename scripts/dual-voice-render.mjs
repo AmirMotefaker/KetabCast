@@ -28,6 +28,8 @@ const MAX_TTS_SEGMENT_WORDS = 180;
 const MIN_TTS_SEGMENT_WORDS = 80;
 const MIN_AUDIO_SECONDS_PER_WORD = 0.25;
 const MAX_SEGMENT_AUDIO_COVERAGE_ATTEMPTS = 2;
+const MAX_TTS_COVERAGE_CHILD_WORDS = 70;
+const MAX_COVERAGE_CHILD_AUDIO_ATTEMPTS = 1;
 const DEFAULT_TRANSIENT_429_DELAY_MS = 30000;
 const MAX_TRANSIENT_RETRY_DELAY_MS = 120000;
 
@@ -476,6 +478,85 @@ function buildTtsSegments(text) {
   return segments;
 }
 
+function buildCoverageChildSegments(text) {
+  const source = String(text ?? "").trim();
+  const sentences = source
+    .split(/(?<=[.!?؟؛])\s+/u)
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (
+    sentences.length < 2 ||
+    sentences.some(
+      (sentence) =>
+        countWords(sentence) >
+          MAX_TTS_COVERAGE_CHILD_WORDS,
+    )
+  ) {
+    return [];
+  }
+
+  const groups = [];
+  let current = [];
+  let currentWords = 0;
+
+  const flush = () => {
+    if (current.length === 0) return;
+    groups.push({
+      parts: current,
+      words: currentWords,
+    });
+    current = [];
+    currentWords = 0;
+  };
+
+  for (const sentence of sentences) {
+    const sentenceWords = countWords(sentence);
+
+    if (
+      current.length > 0 &&
+      currentWords + sentenceWords >
+        MAX_TTS_COVERAGE_CHILD_WORDS
+    ) {
+      flush();
+    }
+
+    current.push(sentence);
+    currentWords += sentenceWords;
+  }
+
+  flush();
+
+  if (groups.length < 2) {
+    return [];
+  }
+
+  const children = groups.map((group, index) => ({
+    index,
+    text: group.parts.join(" ").trim(),
+    words: group.words,
+  }));
+
+  const originalWords = normalizedWordSequence(source);
+  const reconstructedWords = normalizedWordSequence(
+    children.map((child) => child.text).join(" "),
+  );
+
+  if (
+    originalWords.length !== reconstructedWords.length ||
+    originalWords.some(
+      (word, index) =>
+        word !== reconstructedWords[index],
+    )
+  ) {
+    throw new Error(
+      "TTS_COVERAGE_CHILD_TEXT_SEQUENCE_MISMATCH",
+    );
+  }
+
+  return children;
+}
+
 function validateLongFormSegmentation() {
   const paragraph = (word, count) =>
     Array.from(
@@ -509,6 +590,23 @@ function validateLongFormSegmentation() {
     96, 145, 176, 173, 143, 86,
   ];
 
+  const fallbackSentence = (prefix, count) =>
+    Array.from(
+      { length: count },
+      (_, index) => `${prefix}${index}`,
+    ).join(" ");
+  const fallbackSample = [
+    fallbackSentence("الف", 29) + ".",
+    fallbackSentence("ب", 32) + ".",
+    fallbackSentence("ج", 10) + ".",
+    fallbackSentence("د", 29) + ".",
+    fallbackSentence("ه", 10) + ".",
+  ].join(" ");
+  const coverageChildren =
+    buildCoverageChildSegments(fallbackSample);
+  const coverageChildWordPlan =
+    coverageChildren.map((child) => child.words);
+
   if (
     segmentWordPlan.join(",") !==
       expectedSegmentWordPlan.join(",") ||
@@ -524,6 +622,12 @@ function validateLongFormSegmentation() {
         segment.words > MAX_TTS_SEGMENT_WORDS,
     ) ||
     MAX_SEGMENT_AUDIO_COVERAGE_ATTEMPTS !== 2 ||
+    MAX_TTS_COVERAGE_CHILD_WORDS !== 70 ||
+    MAX_COVERAGE_CHILD_AUDIO_ATTEMPTS !== 1 ||
+    coverageChildWordPlan.join(",") !== "61,49" ||
+    coverageChildren
+      .map((child) => child.text)
+      .join(" ") !== fallbackSample ||
     !audioCoverageSufficient(427.24, 1090) ||
     audioCoverageSufficient(12.84, 1090) ||
     audioCoverageSufficient(75.72, 1101)
@@ -537,7 +641,8 @@ function validateLongFormSegmentation() {
     "Dual-voice long-form segmentation PASS: " +
     `paragraph-first <=${MAX_TTS_SEGMENT_WORDS} words; ` +
     `audio floor=${MIN_AUDIO_SECONDS_PER_WORD.toFixed(2)}s/word; ` +
-    "r15 110-word truncation coverage recovery=2 PASS; historical segment-count metadata migration PASS.",
+    "r17 110-word double-truncation child fallback=61,49 PASS; " +
+    "parent coverage recovery=2; historical segment-count metadata migration PASS.",
   );
 }
 
@@ -4225,6 +4330,73 @@ function segmentFiles({
   };
 }
 
+function coverageChildFiles({
+  chunksRoot,
+  chunk,
+  parentSegment,
+  child,
+}) {
+  const canonicalPrefix = String(
+    chunk.index + 1,
+  ).padStart(2, "0");
+  const parentPrefix = String(
+    parentSegment.index + 1,
+  ).padStart(3, "0");
+  const childPrefix = String(
+    child.index + 1,
+  ).padStart(3, "0");
+  const root = path.join(
+    chunksRoot,
+    `${canonicalPrefix}-segments`,
+    `${parentPrefix}-children`,
+  );
+
+  return {
+    root,
+    wav: path.join(root, `${childPrefix}.wav`),
+    temp: path.join(
+      root,
+      `${childPrefix}.provider`,
+    ),
+    checkpoint: path.join(
+      root,
+      `${childPrefix}.checkpoint.json`,
+    ),
+    pending: path.join(
+      root,
+      `${childPrefix}.interaction.json`,
+    ),
+  };
+}
+
+async function coverageChildStatePresent({
+  chunksRoot,
+  chunk,
+  segment,
+}) {
+  const children =
+    buildCoverageChildSegments(segment.text);
+
+  for (const child of children) {
+    const files = coverageChildFiles({
+      chunksRoot,
+      chunk,
+      parentSegment: segment,
+      child,
+    });
+
+    if (
+      await fileExists(files.wav) ||
+      await fileExists(files.checkpoint) ||
+      await fileExists(files.pending)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function validateSegmentCheckpointShape({
   checkpoint,
   bookSlug,
@@ -4728,6 +4900,319 @@ async function resumeSegmentPendingInteraction({
   };
 }
 
+
+async function renderSegmentViaCoverageChildren({
+  apiKey,
+  outRoot,
+  chunksRoot,
+  files,
+  bookSlug,
+  role,
+  voice,
+  spokenText,
+  chunk,
+  segment,
+  segmentCount,
+  plannedRequests,
+  parentCoverageDurations = [],
+  resumedFallback = false,
+}) {
+  const children =
+    buildCoverageChildSegments(segment.text);
+
+  if (children.length < 2) {
+    throw new Error(
+      "TTS_SEGMENT_COVERAGE_CHILD_SPLIT_UNAVAILABLE: " +
+      `${path.relative(outRoot, files.wav).replaceAll("\\", "/")}; ` +
+      `words=${segment.words}; maxChild=${MAX_TTS_COVERAGE_CHILD_WORDS}.`,
+    );
+  }
+
+  const childWavs = [];
+  const childEvidence = [];
+
+  for (const child of children) {
+    const childFiles = coverageChildFiles({
+      chunksRoot,
+      chunk,
+      parentSegment: segment,
+      child,
+    });
+    await mkdir(childFiles.root, {
+      recursive: true,
+    });
+
+    const childChunk = {
+      ...chunk,
+      text: child.text,
+      words: child.words,
+      segmentIndex: child.index,
+      segmentCount: children.length,
+    };
+    const childHash = sha256(child.text);
+    let generated =
+      await resumeSegmentCheckpoint({
+        outRoot,
+        files: childFiles,
+        bookSlug,
+        role,
+        voice,
+        spokenText,
+        chunk,
+        segment: child,
+        segmentCount: children.length,
+      });
+
+    if (!generated) {
+      generated =
+        await resumeSegmentPendingInteraction({
+          apiKey,
+          outRoot,
+          files: childFiles,
+          bookSlug,
+          role,
+          voice,
+          spokenText,
+          chunk,
+          segment: child,
+          segmentCount: children.length,
+        });
+    }
+
+    if (!generated) {
+      const prompt = directorPrompt(
+        child.text,
+        role,
+        voice,
+        bookSlug,
+        childChunk,
+        false,
+        true,
+      );
+      const recoveryPrompt = directorPrompt(
+        child.text,
+        role,
+        voice,
+        bookSlug,
+        childChunk,
+        true,
+        true,
+      );
+
+      generated = await callTts(
+        apiKey,
+        voice,
+        prompt,
+        plannedRequests,
+        {
+          spokenChunkSha256: childHash,
+          recoveryPrompt,
+          onAcceptedInteraction: async ({
+            interactionId:
+              acceptedInteractionId,
+          }) => {
+            await writeSegmentPendingInteraction({
+              pendingFile: childFiles.pending,
+              outRoot,
+              wav: childFiles.wav,
+              bookSlug,
+              role,
+              voice,
+              spokenText,
+              chunk,
+              segment: child,
+              segmentCount: children.length,
+              interactionId:
+                acceptedInteractionId,
+              pollWindowsUsed: 1,
+              reusedFrom: {
+                coverageChildFallback: {
+                  parentSegmentIndex:
+                    segment.index,
+                },
+              },
+            });
+          },
+        },
+      );
+
+      await providerToWav(
+        generated,
+        childFiles.wav,
+        childFiles.temp,
+      );
+
+      const childDuration =
+        durationSeconds(childFiles.wav);
+
+      if (
+        !audioCoverageSufficient(
+          childDuration,
+          child.words,
+        )
+      ) {
+        await unlink(
+          childFiles.pending,
+        ).catch(() => {});
+        await unlink(
+          childFiles.wav,
+        ).catch(() => {});
+
+        throw new Error(
+          "TTS_SEGMENT_CHILD_AUDIO_COVERAGE_TOO_SHORT: " +
+          `parent=${path.relative(outRoot, files.wav).replaceAll("\\", "/")}; ` +
+          `child=${child.index + 1}/${children.length}; ` +
+          `duration=${childDuration.toFixed(3)}s; ` +
+          `words=${child.words}; ` +
+          `minimum=${audioCoverageMinimumSeconds(child.words).toFixed(3)}s; ` +
+          "new source release required before another fresh child attempt.",
+        );
+      }
+
+      await writeSegmentCheckpoint({
+        checkpointFile:
+          childFiles.checkpoint,
+        outRoot,
+        wav: childFiles.wav,
+        bookSlug,
+        role,
+        voice,
+        spokenText,
+        chunk,
+        segment: child,
+        segmentCount: children.length,
+        reusedFrom: {
+          coverageChildFallback: {
+            parentSegmentIndex: segment.index,
+            parentCoverageDurations:
+              parentCoverageDurations.map(
+                (value) => Number(value),
+              ),
+          },
+        },
+      });
+
+      await unlink(
+        childFiles.pending,
+      ).catch(() => {});
+    }
+
+    successfullySynthesizedTextHashes.add(
+      childHash,
+    );
+
+    const childDuration =
+      durationSeconds(childFiles.wav);
+
+    assertAudioCoverage({
+      duration: childDuration,
+      words: child.words,
+      label: path
+        .relative(outRoot, childFiles.wav)
+        .replaceAll("\\", "/"),
+    });
+
+    childWavs.push(childFiles.wav);
+    childEvidence.push({
+      index: child.index,
+      words: child.words,
+      spokenSegmentSha256: childHash,
+      durationSeconds:
+        Number(childDuration.toFixed(3)),
+      checkpointReused: Boolean(
+        generated.segmentCheckpointReused,
+      ),
+      interactionResumed: Boolean(
+        generated.segmentInteractionResumed,
+      ),
+    });
+  }
+
+  const childConcatFile = path.join(
+    files.root,
+    `${String(segment.index + 1).padStart(3, "0")}-children.concat.txt`,
+  );
+
+  await writeFile(
+    childConcatFile,
+    concatText(childWavs),
+    "utf8",
+  );
+
+  run("ffmpeg", [
+    "-hide_banner", "-loglevel", "error", "-y",
+    "-f", "concat",
+    "-safe", "0",
+    "-i", childConcatFile,
+    "-ar", "44100",
+    "-ac", "1",
+    "-c:a", "pcm_s16le",
+    files.wav,
+  ]);
+
+  const parentDuration =
+    durationSeconds(files.wav);
+
+  if (
+    !audioCoverageSufficient(
+      parentDuration,
+      segment.words,
+    )
+  ) {
+    await unlink(files.wav).catch(() => {});
+    throw new Error(
+      "TTS_SEGMENT_CHILD_CONCAT_AUDIO_TOO_SHORT: " +
+      `${path.relative(outRoot, files.wav).replaceAll("\\", "/")}; ` +
+      `duration=${parentDuration.toFixed(3)}s; words=${segment.words}; ` +
+      `minimum=${audioCoverageMinimumSeconds(segment.words).toFixed(3)}s.`,
+    );
+  }
+
+  await writeSegmentCheckpoint({
+    checkpointFile: files.checkpoint,
+    outRoot,
+    wav: files.wav,
+    bookSlug,
+    role,
+    voice,
+    spokenText,
+    chunk,
+    segment,
+    segmentCount,
+    reusedFrom: {
+      coverageChildFallback: {
+        childCount: children.length,
+        childWordPlan:
+          children.map((child) => child.words),
+        parentCoverageDurations:
+          parentCoverageDurations.map(
+            (value) => Number(value),
+          ),
+        resumedFallback: Boolean(
+          resumedFallback,
+        ),
+      },
+    },
+  });
+
+  console.log(
+    "Dual-voice segment coverage child fallback PASS: " +
+    `${path.relative(outRoot, files.wav).replaceAll("\\", "/")}; ` +
+    `children=${children.length}; ` +
+    `wordPlan=${children.map((child) => child.words).join(",")}; ` +
+    `duration=${parentDuration.toFixed(3)}s; words=${segment.words}.`,
+  );
+
+  return {
+    mimeType: "audio/wav",
+    sampleRate: 44100,
+    channels: 1,
+    segmentCoverageChildFallback: true,
+    coverageChildCount: children.length,
+    coverageChildEvidence: childEvidence,
+  };
+}
+
 async function renderCanonicalChunkViaSegments({
   apiKey,
   outRoot,
@@ -4791,6 +5276,33 @@ async function renderCanonicalChunkViaSegments({
 
     const coverageDurations = [];
     let coverageAttempt = 0;
+
+    if (
+      !generated &&
+      await coverageChildStatePresent({
+        chunksRoot,
+        chunk,
+        segment,
+      })
+    ) {
+      generated =
+        await renderSegmentViaCoverageChildren({
+          apiKey,
+          outRoot,
+          chunksRoot,
+          files,
+          bookSlug,
+          role,
+          voice,
+          spokenText,
+          chunk,
+          segment,
+          segmentCount: segments.length,
+          plannedRequests,
+          parentCoverageDurations: [],
+          resumedFallback: true,
+        });
+    }
 
     while (
       !generated &&
@@ -4884,15 +5396,33 @@ async function renderCanonicalChunkViaSegments({
           continue;
         }
 
-        throw new Error(
-          "TTS_SEGMENT_AUDIO_COVERAGE_RECOVERY_EXHAUSTED: " +
-          `${path.relative(outRoot, files.wav).replaceAll("\\", "/")}; ` +
+        console.log(
+          "Gemini TTS parent segment coverage exhausted; " +
+          "switching to deterministic sentence-boundary child fallback. " +
           `attempts=${MAX_SEGMENT_AUDIO_COVERAGE_ATTEMPTS}; ` +
           `durations=${coverageDurations.map((value) => value.toFixed(3)).join(",")}s; ` +
-          `words=${segment.words}; ` +
-          `minimum=${audioCoverageMinimumSeconds(segment.words).toFixed(3)}s; ` +
-          "new source release required before another fresh coverage attempt.",
+          `words=${segment.words}; maxChild=${MAX_TTS_COVERAGE_CHILD_WORDS}.`,
         );
+
+        generated =
+          await renderSegmentViaCoverageChildren({
+            apiKey,
+            outRoot,
+            chunksRoot,
+            files,
+            bookSlug,
+            role,
+            voice,
+            spokenText,
+            chunk,
+            segment,
+            segmentCount: segments.length,
+            plannedRequests,
+            parentCoverageDurations:
+              coverageDurations,
+            resumedFallback: false,
+          });
+        break;
       }
 
       await writeSegmentCheckpoint({
@@ -4954,6 +5484,12 @@ async function renderCanonicalChunkViaSegments({
       interactionResumed: Boolean(
         generated.segmentInteractionResumed,
       ),
+      coverageChildFallback: Boolean(
+        generated.segmentCoverageChildFallback,
+      ),
+      coverageChildCount:
+        Number(generated.coverageChildCount ?? 0) ||
+        null,
     });
   }
 
