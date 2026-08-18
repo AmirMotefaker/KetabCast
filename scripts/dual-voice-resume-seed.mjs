@@ -11,7 +11,7 @@ import path from "node:path";
 import process from "node:process";
 
 const MAX_PENDING_INTERACTION_POLL_WINDOWS = 2;
-const MAX_TTS_SEGMENT_WORDS = 220;
+const MAX_TTS_SEGMENT_WORDS = 180;
 const MIN_TTS_SEGMENT_WORDS = 80;
 const MIN_AUDIO_SECONDS_PER_WORD = 0.25;
 
@@ -238,6 +238,20 @@ function buildTtsSegments(text) {
     words: group.words,
   }));
 }
+function segmentCountMetadataValid(value, segmentIndex) {
+  const count = Number(value);
+  const index = Number(segmentIndex);
+
+  return (
+    Number.isInteger(count) &&
+    count >= 1 &&
+    count <= 64 &&
+    Number.isInteger(index) &&
+    index >= 0 &&
+    count > index
+  );
+}
+
 function run(command, args) {
   const result = spawnSync(command, args, {
     encoding: "utf8",
@@ -381,8 +395,21 @@ function selfTest() {
     paragraph("ظ", 85),
   ].join("\n\n");
   const ttsSegments = buildTtsSegments(segmentSample);
+  const ttsSegmentWordPlan = ttsSegments.map(
+    (segment) => segment.words,
+  );
+  const expectedTtsSegmentWordPlan = [
+    99, 140, 110, 101, 138, 85,
+  ];
 
   if (
+    ttsSegmentWordPlan.join(",") !==
+      expectedTtsSegmentWordPlan.join(",") ||
+    !segmentCountMetadataValid(7, 0) ||
+    !segmentCountMetadataValid(7, 1) ||
+    !segmentCountMetadataValid(9, 1) ||
+    segmentCountMetadataValid(1, 1) ||
+    segmentCountMetadataValid(65, 0) ||
     chunks.length !== 2 ||
     chunks[0].index !== 0 ||
     chunks[1].index !== 1 ||
@@ -465,7 +492,8 @@ function selfTest() {
     "deterministic chunks + pending Interaction ID contract + " +
     "legacy/existing poll-window budget migration + " +
     "terminal content_blocked counter contract + " +
-    "long-form segment/duration coverage contract.",
+    "long-form segment/duration coverage contract + " +
+    "historical segment-count metadata migration contract.",
   );
 }
 
@@ -741,8 +769,14 @@ async function main() {
               ) !== chunk.index ||
               Number(checkpoint.segmentIndex) !==
                 segment.index ||
-              Number(checkpoint.segmentCount) !==
-                segments.length ||
+              !segmentCountMetadataValid(
+                checkpoint.segmentCount,
+                segment.index,
+              ) ||
+              !segmentCountMetadataValid(
+                segments.length,
+                segment.index,
+              ) ||
               Number(checkpoint.words) !==
                 segment.words ||
               checkpoint.relativePath !==
@@ -848,8 +882,14 @@ async function main() {
               ) !== chunk.index ||
               Number(pending.segmentIndex) !==
                 segment.index ||
-              Number(pending.segmentCount) !==
-                segments.length ||
+              !segmentCountMetadataValid(
+                pending.segmentCount,
+                segment.index,
+              ) ||
+              !segmentCountMetadataValid(
+                segments.length,
+                segment.index,
+              ) ||
               Number(pending.words) !==
                 segment.words ||
               pending.relativePath !==

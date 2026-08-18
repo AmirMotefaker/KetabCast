@@ -24,7 +24,7 @@ const MAX_TTS_NETWORK_REQUESTS = 24;
 const MAX_CONTENT_BLOCKED_RECOVERY_POSTS = 4;
 const MAX_CONTENT_BLOCKED_CLASSIFIER_BLOCKS = 2;
 const MIN_TTS_REQUEST_INTERVAL_MS = 12000;
-const MAX_TTS_SEGMENT_WORDS = 220;
+const MAX_TTS_SEGMENT_WORDS = 180;
 const MIN_TTS_SEGMENT_WORDS = 80;
 const MIN_AUDIO_SECONDS_PER_WORD = 0.25;
 const DEFAULT_TRANSIENT_429_DELAY_MS = 30000;
@@ -500,8 +500,23 @@ function validateLongFormSegmentation() {
   ].join("\n\n");
 
   const segments = buildTtsSegments(sample);
+  const segmentWordPlan = segments.map(
+    (segment) => segment.words,
+  );
+  const expectedSegmentWordPlan = [
+    99, 140, 110, 101, 138, 85,
+    96, 145, 176, 173, 143, 86,
+  ];
 
   if (
+    segmentWordPlan.join(",") !==
+      expectedSegmentWordPlan.join(",") ||
+    !segmentCountMetadataValid(7, 0) ||
+    !segmentCountMetadataValid(7, 1) ||
+    !segmentCountMetadataValid(9, 1) ||
+    segmentCountMetadataValid(1, 1) ||
+    segmentCountMetadataValid(0, 0) ||
+    segmentCountMetadataValid(65, 0) ||
     segments.length < 4 ||
     segments.some(
       (segment) =>
@@ -520,7 +535,7 @@ function validateLongFormSegmentation() {
     "Dual-voice long-form segmentation PASS: " +
     `paragraph-first <=${MAX_TTS_SEGMENT_WORDS} words; ` +
     `audio floor=${MIN_AUDIO_SECONDS_PER_WORD.toFixed(2)}s/word; ` +
-    "r13 truncated 12.84s/75.72s checkpoints rejected.",
+    "r14 211-word truncation split; historical segment-count metadata migration PASS.",
   );
 }
 
@@ -4153,6 +4168,20 @@ async function resumeGeneratedChunk({
   };
 }
 
+function segmentCountMetadataValid(value, segmentIndex) {
+  const count = Number(value);
+  const index = Number(segmentIndex);
+
+  return (
+    Number.isInteger(count) &&
+    count >= 1 &&
+    count <= 64 &&
+    Number.isInteger(index) &&
+    index >= 0 &&
+    count > index
+  );
+}
+
 function segmentFiles({
   chunksRoot,
   chunk,
@@ -4205,8 +4234,14 @@ function validateSegmentCheckpointShape({
       chunk.index ||
     Number(checkpoint.segmentIndex) !==
       segment.index ||
-    Number(checkpoint.segmentCount) !==
-      segmentCount ||
+    !segmentCountMetadataValid(
+      checkpoint.segmentCount,
+      segment.index,
+    ) ||
+    !segmentCountMetadataValid(
+      segmentCount,
+      segment.index,
+    ) ||
     Number(checkpoint.words) !==
       segment.words ||
     checkpoint.spokenScriptSha256 !==
@@ -4487,8 +4522,14 @@ async function resumeSegmentPendingInteraction({
       chunk.index ||
     Number(pending.segmentIndex) !==
       segment.index ||
-    Number(pending.segmentCount) !==
-      segmentCount ||
+    !segmentCountMetadataValid(
+      pending.segmentCount,
+      segment.index,
+    ) ||
+    !segmentCountMetadataValid(
+      segmentCount,
+      segment.index,
+    ) ||
     Number(pending.words) !== segment.words ||
     pending.relativePath !== relativePath ||
     pending.spokenScriptSha256 !==
