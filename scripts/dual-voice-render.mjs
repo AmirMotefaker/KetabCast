@@ -4408,9 +4408,54 @@ async function resumeSegmentCheckpoint({
     label: relativePath,
   });
 
+  const previousSourceRunId =
+    Number(checkpoint.sourceRunId) || null;
+  const previousSourceSha = String(
+    checkpoint.sourceCodeSha ?? "",
+  );
+  const currentSourceSha =
+    process.env.GITHUB_SHA?.trim() ||
+    run("git", ["rev-parse", "HEAD"]);
+  const currentRunId =
+    Number(process.env.GITHUB_RUN_ID ?? 0) ||
+    null;
+
+  if (
+    currentRunId &&
+    /^[0-9a-f]{40}$/u.test(currentSourceSha) &&
+    (
+      previousSourceRunId !== currentRunId ||
+      previousSourceSha !== currentSourceSha
+    )
+  ) {
+    await writeSegmentCheckpoint({
+      checkpointFile: files.checkpoint,
+      outRoot,
+      wav: files.wav,
+      bookSlug,
+      role,
+      voice,
+      spokenText,
+      chunk,
+      segment,
+      segmentCount,
+      reusedFrom: {
+        sourceRunId: previousSourceRunId,
+        sourceSha: previousSourceSha,
+        previous: checkpoint.reusedFrom ?? null,
+      },
+    });
+
+    console.log(
+      "Dual-voice segment checkpoint provenance re-anchor PASS: " +
+      `${relativePath}; oldRun=${previousSourceRunId}; ` +
+      `newRun=${currentRunId}.`,
+    );
+  }
+
   console.log(
     "Dual-voice segment checkpoint reuse PASS: " +
-    `${relativePath}; sourceRun=${checkpoint.sourceRunId}.`,
+    `${relativePath}; sourceRun=${previousSourceRunId}.`,
   );
 
   return {
