@@ -1392,6 +1392,49 @@ async function validateInteractionResolutionRuntime() {
 async function validatePendingInteractionPersistenceContract() {
   const events = [];
   let fetchCalls = 0;
+  let streamRequest = null;
+
+  const acceptedId =
+    "v1_pending-persistence-self-test";
+  const audioData = Buffer
+    .alloc(2048, 5)
+    .toString("base64");
+  const sse = [
+    "event: interaction.created",
+    "data: " + JSON.stringify({
+      interaction: {
+        id: acceptedId,
+        status: "in_progress",
+      },
+      event_type: "interaction.created",
+    }),
+    "",
+    "event: step.delta",
+    "data: " + JSON.stringify({
+      index: 0,
+      delta: {
+        type: "audio",
+        data: audioData,
+        mime_type: "audio/l16",
+        sample_rate: PCM_SAMPLE_RATE,
+        channels: PCM_CHANNELS,
+      },
+      event_type: "step.delta",
+    }),
+    "",
+    "event: interaction.completed",
+    "data: " + JSON.stringify({
+      interaction: {
+        id: acceptedId,
+        status: "completed",
+      },
+      event_type: "interaction.completed",
+    }),
+    "",
+    "event: done",
+    "data: [DONE]",
+    "",
+  ].join("\n");
 
   const generated = await callTts(
     "self-test-key",
@@ -1402,54 +1445,56 @@ async function validatePendingInteractionPersistenceContract() {
       paceTtsRequest: async () => {},
       reserveTtsNetworkRequest: () => {},
       sleep: async () => {},
-      fetch: async () => {
+      fetch: async (_url, request) => {
         fetchCalls += 1;
+        const body = JSON.parse(
+          String(request?.body ?? "{}"),
+        );
+        streamRequest = {
+          stream: body.stream === true,
+          accept: String(
+            request?.headers?.Accept ?? "",
+          ),
+        };
+
         return {
           ok: true,
           status: 200,
-          text: async () =>
-            JSON.stringify({
-              id: "v1_pending-persistence-self-test",
-              status: "in_progress",
-              steps: [],
-            }),
+          text: async () => sse,
         };
       },
       onAcceptedInteraction: async ({
         interactionId: acceptedInteractionId,
       }) => {
-        events.push(`persist:${acceptedInteractionId}`);
-      },
-      resolveAcceptedInteraction: async (
-        _apiKey,
-        interaction,
-      ) => {
-        events.push(`resolve:${interaction.id}`);
-        return {
-          buffer: Buffer.alloc(2048, 5),
-          mimeType: "audio/l16",
-          sampleRate: PCM_SAMPLE_RATE,
-          channels: PCM_CHANNELS,
-        };
+        events.push(
+          "persist:" + acceptedInteractionId,
+        );
       },
     },
   );
 
   if (
     fetchCalls !== 1 ||
-    events.length !== 2 ||
+    streamRequest?.stream !== true ||
+    streamRequest?.accept !== "text/event-stream" ||
+    events.length !== 1 ||
     events[0] !==
       "persist:v1_pending-persistence-self-test" ||
-    events[1] !==
-      "resolve:v1_pending-persistence-self-test" ||
-    generated?.buffer?.length !== 2048
+    generated?.buffer?.length !== 2048 ||
+    generated?.interactionId !== acceptedId ||
+    generated?.streaming !== true
   ) {
     throw new Error(
-      "Pending Interaction persistence ordering self-test failed: " +
+      "Pending Interaction streaming persistence ordering self-test failed: " +
       JSON.stringify({
         fetchCalls,
+        streamRequest,
         events,
         bytes: generated?.buffer?.length ?? null,
+        interactionId:
+          generated?.interactionId ?? null,
+        streaming:
+          generated?.streaming ?? null,
       }),
     );
   }
@@ -1674,8 +1719,11 @@ async function validateContentBlockedRecoveryRuntime() {
     classifierBlocks: 0,
   };
   const successInputs = [];
+  const successStreamFlags = [];
+  const successAcceptHeaders = [];
   let successFetchCalls = 0;
   let successReservedPosts = 0;
+  let successAcceptedInteractionId = null;
 
   const generated = await callTts(
     "self-test-key",
@@ -1694,12 +1742,25 @@ async function validateContentBlockedRecoveryRuntime() {
         successReservedPosts += 1;
       },
       sleep: async () => {},
+      onAcceptedInteraction: async ({
+        interactionId,
+      }) => {
+        successAcceptedInteractionId =
+          interactionId;
+      },
       fetch: async (_url, request) => {
         successFetchCalls += 1;
-        successInputs.push(
-          JSON.parse(
-            String(request?.body ?? "{}"),
-          ).input,
+        const requestBody = JSON.parse(
+          String(request?.body ?? "{}"),
+        );
+        successInputs.push(requestBody.input);
+        successStreamFlags.push(
+          requestBody.stream === true,
+        );
+        successAcceptHeaders.push(
+          String(
+            request?.headers?.Accept ?? "",
+          ),
         );
 
         if (successFetchCalls === 1) {
@@ -1729,30 +1790,67 @@ async function validateContentBlockedRecoveryRuntime() {
           };
         }
 
+        const acceptedId =
+          "v1_content-blocked-recovery-stream-123456";
+        const audioA = Buffer
+          .alloc(1024, 9)
+          .toString("base64");
+        const audioB = Buffer
+          .alloc(1024, 8)
+          .toString("base64");
+
         return {
           ok: true,
           status: 200,
-          text: async () =>
-            JSON.stringify({
-              id: "content-blocked-recovery-test",
-              status: "completed",
-              steps: [
-                {
-                  type: "model_output",
-                  content: [
-                    {
-                      type: "audio",
-                      data: Buffer
-                        .alloc(2048, 9)
-                        .toString("base64"),
-                      mime_type: "audio/l16",
-                      sample_rate: PCM_SAMPLE_RATE,
-                      channels: PCM_CHANNELS,
-                    },
-                  ],
-                },
-              ],
+          text: async () => [
+            "event: interaction.created",
+            "data: " + JSON.stringify({
+              interaction: {
+                id: acceptedId,
+                status: "in_progress",
+              },
+              event_type: "interaction.created",
             }),
+            "",
+            "event: step.delta",
+            "data: " + JSON.stringify({
+              index: 0,
+              delta: {
+                type: "audio",
+                data: audioA,
+                mime_type: "audio/l16",
+                sample_rate: PCM_SAMPLE_RATE,
+                channels: PCM_CHANNELS,
+              },
+              event_type: "step.delta",
+            }),
+            "",
+            "event: step.delta",
+            "data: " + JSON.stringify({
+              index: 0,
+              delta: {
+                type: "audio",
+                data: audioB,
+                mime_type: "audio/l16",
+                sample_rate: PCM_SAMPLE_RATE,
+                channels: PCM_CHANNELS,
+              },
+              event_type: "step.delta",
+            }),
+            "",
+            "event: interaction.completed",
+            "data: " + JSON.stringify({
+              interaction: {
+                id: acceptedId,
+                status: "completed",
+              },
+              event_type: "interaction.completed",
+            }),
+            "",
+            "event: done",
+            "data: [DONE]",
+            "",
+          ].join("\n"),
         };
       },
     },
@@ -1767,7 +1865,16 @@ async function validateContentBlockedRecoveryRuntime() {
     successInputs.slice(1).some(
       (input) => input !== recoveryPrompt,
     ) ||
-    generated?.buffer?.length !== 2048
+    successStreamFlags.some(
+      (value) => value !== true,
+    ) ||
+    successAcceptHeaders.some(
+      (value) => value !== "text/event-stream",
+    ) ||
+    successAcceptedInteractionId !==
+      "v1_content-blocked-recovery-stream-123456" ||
+    generated?.buffer?.length !== 2048 ||
+    !generated?.streaming
   ) {
     throw new Error(
       "TTS transient-aware recovery self-test failed: " +
@@ -1909,11 +2016,141 @@ async function validateContentBlockedRecoveryRuntime() {
     "Dual-voice content-blocked recovery PASS: " +
     "previously synthesized text only; " +
     "429/5xx transient attempts separated from classifier outcomes; " +
-    "production-like 400 -> 429 -> 400 -> audio recovery PASS; " +
+    "production-like 400 -> 429 -> 400 -> streaming audio recovery PASS; " +
     "recovery network cap 4; classifier-block cap 2; " +
     "unseen text fails closed.",
   );
 }
+async function validateTtsStreamingRuntime() {
+  const interactionId =
+    "v1_streaming-self-test-interaction-123456789";
+  const partA = Buffer.alloc(1024, 5);
+  const partB = Buffer.alloc(1024, 7);
+  const sse = [
+    "event: interaction.created",
+    "data: " + JSON.stringify({
+      interaction: {
+        id: interactionId,
+        status: "in_progress",
+      },
+      event_type: "interaction.created",
+    }),
+    "",
+    "event: step.start",
+    "data: " + JSON.stringify({
+      index: 0,
+      step: { type: "model_output" },
+      event_type: "step.start",
+    }),
+    "",
+    "event: step.delta",
+    "data: " + JSON.stringify({
+      index: 0,
+      delta: {
+        type: "audio",
+        data: partA.toString("base64"),
+        mime_type: "audio/l16",
+        sample_rate: PCM_SAMPLE_RATE,
+        channels: PCM_CHANNELS,
+      },
+      event_type: "step.delta",
+    }),
+    "",
+    "event: step.delta",
+    "data: " + JSON.stringify({
+      index: 0,
+      delta: {
+        type: "audio",
+        data: partB.toString("base64"),
+        mime_type: "audio/l16",
+        sample_rate: PCM_SAMPLE_RATE,
+        channels: PCM_CHANNELS,
+      },
+      event_type: "step.delta",
+    }),
+    "",
+    "event: interaction.completed",
+    "data: " + JSON.stringify({
+      interaction: {
+        id: interactionId,
+        status: "completed",
+      },
+      event_type: "interaction.completed",
+    }),
+    "",
+    "event: done",
+    "data: [DONE]",
+    "",
+  ].join("\n");
+
+  let accepted = null;
+
+  const generated =
+    await materializeTtsStreamingResponse(
+      {
+        text: async () => sse,
+      },
+      "Schedar",
+      async ({ interactionId: id }) => {
+        accepted = id;
+      },
+    );
+
+  if (
+    accepted !== interactionId ||
+    generated.buffer.length !== 2048 ||
+    generated.mimeType !== "audio/l16" ||
+    generated.sampleRate !== PCM_SAMPLE_RATE ||
+    generated.channels !== PCM_CHANNELS ||
+    !generated.streaming
+  ) {
+    throw new Error(
+      "TTS streaming audio self-test failed.",
+    );
+  }
+
+  let contentBlockedRejected = false;
+
+  try {
+    await materializeTtsStreamingResponse(
+      {
+        text: async () => [
+          "event: error",
+          "data: " + JSON.stringify({
+            error: {
+              code: "content_blocked",
+              message:
+                "Request blocked for an unspecified policy reason.",
+            },
+            event_type: "error",
+          }),
+          "",
+        ].join("\n"),
+      },
+      "Schedar",
+      null,
+    );
+  } catch (error) {
+    contentBlockedRejected =
+      String(error?.message ?? error).startsWith(
+        "TTS_STREAM_CONTENT_BLOCKED:",
+      );
+  }
+
+  if (!contentBlockedRejected) {
+    throw new Error(
+      "TTS streaming content-block fail-closed self-test failed.",
+    );
+  }
+
+  console.log(
+    "Dual-voice TTS streaming PASS: " +
+    "fresh generation uses SSE step.delta audio; " +
+    "accepted Interaction ID is checkpointable; " +
+    "stream content_blocked fails closed.",
+  );
+}
+
 async function downloadAudioUri(apiKey, audio, voice) {
   const uri = String(audio?.uri ?? "");
 
@@ -2077,6 +2314,334 @@ async function materializeInteractionAudio(
   }
 
   return null;
+}
+
+function parseInteractionSseBlock(block) {
+  const lines = String(block ?? "")
+    .replaceAll("\r\n", "\n")
+    .split("\n");
+
+  let eventName = "";
+  const dataLines = [];
+
+  for (const line of lines) {
+    if (!line || line.startsWith(":")) continue;
+
+    if (line.startsWith("event:")) {
+      eventName = line.slice("event:".length).trim();
+      continue;
+    }
+
+    if (line.startsWith("data:")) {
+      dataLines.push(line.slice("data:".length).trimStart());
+    }
+  }
+
+  if (dataLines.length === 0) {
+    return null;
+  }
+
+  const dataText = dataLines.join("\n").trim();
+
+  if (!dataText || dataText === "[DONE]") {
+    return {
+      event_type: eventName || "done",
+    };
+  }
+
+  let parsed;
+
+  try {
+    parsed = JSON.parse(dataText);
+  } catch (error) {
+    throw new Error(
+      "TTS_STREAM_INVALID_JSON: " +
+      String(error?.message ?? error),
+    );
+  }
+
+  if (!parsed.event_type && eventName) {
+    parsed.event_type = eventName;
+  }
+
+  return parsed;
+}
+
+async function forEachInteractionSseEvent(
+  response,
+  onEvent,
+) {
+  const emitBlock = async (block) => {
+    const event = parseInteractionSseBlock(block);
+    if (event) {
+      await onEvent(event);
+    }
+  };
+
+  if (
+    response?.body &&
+    typeof response.body.getReader === "function"
+  ) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffered = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (value) {
+        buffered += decoder.decode(value, {
+          stream: !done,
+        });
+      } else if (done) {
+        buffered += decoder.decode();
+      }
+
+      buffered = buffered.replaceAll("\r\n", "\n");
+
+      let boundary = buffered.indexOf("\n\n");
+
+      while (boundary >= 0) {
+        const block = buffered.slice(0, boundary);
+        buffered = buffered.slice(boundary + 2);
+
+        if (block.trim()) {
+          await emitBlock(block);
+        }
+
+        boundary = buffered.indexOf("\n\n");
+      }
+
+      if (done) {
+        if (buffered.trim()) {
+          await emitBlock(buffered);
+        }
+        break;
+      }
+    }
+
+    return;
+  }
+
+  const text = String(await response.text())
+    .replaceAll("\r\n", "\n");
+
+  for (const block of text.split("\n\n")) {
+    if (block.trim()) {
+      await emitBlock(block);
+    }
+  }
+}
+
+async function materializeTtsStreamingResponse(
+  response,
+  voice,
+  onAcceptedInteraction,
+) {
+  const audioParts = [];
+  let totalBytes = 0;
+  let acceptedId = null;
+  let acceptedNotified = false;
+  let completed = false;
+  let mimeType = null;
+  let sampleRate = null;
+  let channels = null;
+
+  const notifyAccepted = async (id) => {
+    const normalized = String(id ?? "");
+
+    if (!normalized) return;
+
+    if (!/^\S{16,512}$/u.test(normalized)) {
+      throw new Error(
+        "TTS_STREAM_INTERACTION_ID_INVALID: " +
+        normalized,
+      );
+    }
+
+    if (
+      acceptedId &&
+      acceptedId !== normalized
+    ) {
+      throw new Error(
+        "TTS_STREAM_INTERACTION_ID_CHANGED: " +
+        acceptedId + " -> " + normalized,
+      );
+    }
+
+    acceptedId = normalized;
+
+    if (
+      !acceptedNotified &&
+      typeof onAcceptedInteraction === "function"
+    ) {
+      acceptedNotified = true;
+      await onAcceptedInteraction({
+        interactionId: normalized,
+        interactionStatus: "in_progress",
+      });
+    }
+  };
+
+  await forEachInteractionSseEvent(
+    response,
+    async (event) => {
+      const eventType = String(
+        event?.event_type ?? "",
+      );
+
+      if (eventType === "interaction.created") {
+        await notifyAccepted(
+          event?.interaction?.id,
+        );
+        return;
+      }
+
+      if (eventType === "interaction.completed") {
+        completed = true;
+        await notifyAccepted(
+          event?.interaction?.id,
+        );
+        return;
+      }
+
+      if (eventType === "error") {
+        const code = String(
+          event?.error?.code ?? "",
+        ).trim().toLowerCase();
+        const message = String(
+          event?.error?.message ?? "",
+        ).trim();
+
+        if (code === "content_blocked") {
+          throw new Error(
+            "TTS_STREAM_CONTENT_BLOCKED: " +
+            message,
+          );
+        }
+
+        throw new Error(
+          "TTS_STREAM_PROVIDER_ERROR: " +
+          `code=${code || "unknown"}; ` +
+          message,
+        );
+      }
+
+      if (
+        eventType !== "step.delta" ||
+        event?.delta?.type !== "audio"
+      ) {
+        return;
+      }
+
+      if (event.delta.uri) {
+        throw new Error(
+          "TTS_STREAM_AUDIO_URI_UNSUPPORTED: " +
+          String(event.delta.uri).slice(0, 240),
+        );
+      }
+
+      const data = String(
+        event?.delta?.data ?? "",
+      );
+
+      if (!data) {
+        return;
+      }
+
+      const part = Buffer.from(
+        data,
+        "base64",
+      );
+
+      if (part.length === 0) {
+        throw new Error(
+          "TTS_STREAM_AUDIO_DELTA_EMPTY",
+        );
+      }
+
+      const nextMime = String(
+        event?.delta?.mime_type ??
+          mimeType ??
+          "audio/l16",
+      );
+      const nextSampleRate = Number(
+        event?.delta?.sample_rate ??
+          sampleRate ??
+          PCM_SAMPLE_RATE,
+      );
+      const nextChannels = Number(
+        event?.delta?.channels ??
+          channels ??
+          PCM_CHANNELS,
+      );
+
+      if (mimeType && nextMime !== mimeType) {
+        throw new Error(
+          "TTS_STREAM_AUDIO_MIME_CHANGED",
+        );
+      }
+
+      if (
+        sampleRate !== null &&
+        nextSampleRate !== sampleRate
+      ) {
+        throw new Error(
+          "TTS_STREAM_AUDIO_SAMPLE_RATE_CHANGED",
+        );
+      }
+
+      if (
+        channels !== null &&
+        nextChannels !== channels
+      ) {
+        throw new Error(
+          "TTS_STREAM_AUDIO_CHANNELS_CHANGED",
+        );
+      }
+
+      mimeType = nextMime;
+      sampleRate = nextSampleRate;
+      channels = nextChannels;
+
+      audioParts.push(part);
+      totalBytes += part.length;
+    },
+  );
+
+  if (totalBytes < 2048) {
+    if (acceptedId) {
+      throw new Error(
+        "TTS_STREAM_COMPLETED_WITHOUT_AUDIO: " +
+        `interactionId=${acceptedId}; ` +
+        `completed=${completed}; ` +
+        `bytes=${totalBytes}`,
+      );
+    }
+
+    throw new Error(
+      "TTS_STREAM_NO_AUDIO_OR_INTERACTION_ID: " +
+      `completed=${completed}; bytes=${totalBytes}`,
+    );
+  }
+
+  console.log(
+    "Gemini TTS streaming audio PASS: " +
+    `interactionId=${acceptedId ?? "none"}; ` +
+    `bytes=${totalBytes}; ` +
+    `mime=${mimeType ?? "audio/l16"}; ` +
+    `sampleRate=${sampleRate ?? PCM_SAMPLE_RATE}; ` +
+    `channels=${channels ?? PCM_CHANNELS}.`,
+  );
+
+  return {
+    buffer: Buffer.concat(audioParts),
+    mimeType: mimeType ?? "audio/l16",
+    sampleRate: sampleRate ?? PCM_SAMPLE_RATE,
+    channels: channels ?? PCM_CHANNELS,
+    streaming: true,
+    interactionId: acceptedId,
+  };
 }
 
 async function getInteraction(
@@ -2393,10 +2958,10 @@ async function callTts(
       generation_config: {
         speech_config: [{ voice }],
       },
+      stream: true,
     };
 
     let response;
-    let responseText;
 
     try {
       response = await fetchRequest(url, {
@@ -2404,12 +2969,11 @@ async function callTts(
         headers: {
           "x-goog-api-key": apiKey,
           "Content-Type": "application/json",
+          "Accept": "text/event-stream",
           "Api-Revision": API_REVISION,
         },
         body: JSON.stringify(body),
       });
-
-      responseText = await response.text();
     } catch (error) {
       lastError = error;
 
@@ -2430,6 +2994,16 @@ async function callTts(
       await wait(waitMs);
       continue;
     }
+
+    if (response.ok) {
+      return materializeTtsStreamingResponse(
+        response,
+        voice,
+        onAcceptedInteraction,
+      );
+    }
+
+    const responseText = await response.text();
 
     if (!response.ok) {
       const quota = parseQuotaDetails(responseText);
@@ -2596,58 +3170,6 @@ async function callTts(
       throw error;
     }
 
-    let interaction;
-
-    try {
-      interaction = JSON.parse(responseText);
-    } catch (error) {
-      lastError = error;
-
-      if (attempt >= MAX_TTS_ATTEMPTS_PER_CHUNK) {
-        throw new Error(
-          "TTS_INTERACTION_INVALID_JSON: " +
-          String(error?.message ?? error),
-        );
-      }
-
-      const waitMs = transientBackoffMs(attempt);
-
-      console.log(
-        "Gemini TTS generation POST returned invalid JSON; " +
-        `attempt ${attempt}/${MAX_TTS_ATTEMPTS_PER_CHUNK}; ` +
-        `retrying after ${(waitMs / 1000).toFixed(1)}s. ` +
-        `generationRequestsUsed=${ttsNetworkRequests}.`,
-      );
-
-      await wait(waitMs);
-      continue;
-    }
-
-    const acceptedId = interactionId(interaction);
-
-    if (acceptedId && onAcceptedInteraction) {
-      await onAcceptedInteraction({
-        interactionId: acceptedId,
-        interactionStatus: interactionStatus(interaction),
-      });
-    }
-
-    const generated = await resolveInteraction(
-      apiKey,
-      interaction,
-      voice,
-    );
-
-    if (generated) {
-      return generated;
-    }
-
-    const summary =
-      safeInteractionSummaryText(interaction);
-
-    throw new Error(
-      `TTS_INTERACTION_2XX_WITHOUT_ID_OR_AUDIO: ${summary}`,
-    );
   }
 
   throw (
@@ -2722,6 +3244,10 @@ async function loadResumeMetadata(file) {
     (
       parsed?.pendingInteractions !== undefined &&
       !Array.isArray(parsed?.pendingInteractions)
+    ) ||
+    (
+      parsed?.contentBlockedFailures !== undefined &&
+      !Array.isArray(parsed?.contentBlockedFailures)
     )
   ) {
     throw new Error("DUAL_VOICE_RESUME_METADATA_INVALID");
@@ -2729,6 +3255,10 @@ async function loadResumeMetadata(file) {
 
   if (!Array.isArray(parsed.pendingInteractions)) {
     parsed.pendingInteractions = [];
+  }
+
+  if (!Array.isArray(parsed.contentBlockedFailures)) {
+    parsed.contentBlockedFailures = [];
   }
 
   return parsed;
@@ -2771,6 +3301,122 @@ async function writeChunkCheckpoint({
     checkpointFile,
     `${JSON.stringify(checkpoint, null, 2)}\n`,
     "utf8",
+  );
+
+  return checkpoint;
+}
+
+function terminalContentBlockedFailure(error) {
+  const message = String(
+    error?.message ?? error ?? "",
+  );
+
+  return (
+    message.startsWith(
+      "TTS_CONTENT_BLOCKED_",
+    ) ||
+    message.startsWith(
+      "TTS_STREAM_CONTENT_BLOCKED:",
+    )
+  );
+}
+
+async function writeContentBlockedFailureCheckpoint({
+  failureFile,
+  outRoot,
+  wav,
+  bookSlug,
+  role,
+  voice,
+  spokenText,
+  chunk,
+  error,
+  recoveryPostsUsedOverride = null,
+  classifierBlocksOverride = null,
+  failureCodeOverride = null,
+}) {
+  const recoveryPostsUsed =
+    recoveryPostsUsedOverride === null
+      ? contentBlockedRecoveryPostsUsed(
+          contentBlockedRecoveryState,
+        )
+      : Number(recoveryPostsUsedOverride);
+  const classifierBlocks =
+    classifierBlocksOverride === null
+      ? contentBlockedClassifierBlocksSeen(
+          contentBlockedRecoveryState,
+        )
+      : Number(classifierBlocksOverride);
+
+  if (
+    !Number.isInteger(recoveryPostsUsed) ||
+    recoveryPostsUsed < 0 ||
+    !Number.isInteger(classifierBlocks) ||
+    classifierBlocks < 0
+  ) {
+    throw new Error(
+      "TTS_CONTENT_BLOCKED_CHECKPOINT_COUNTER_INVALID",
+    );
+  }
+
+  const failureCode =
+    failureCodeOverride === null
+      ? String(
+          error?.message ?? error ?? "",
+        ).split(":")[0]
+      : String(failureCodeOverride);
+
+  if (
+    !/^TTS_(?:CONTENT_BLOCKED_|STREAM_CONTENT_BLOCKED)/u.test(
+      failureCode,
+    )
+  ) {
+    throw new Error(
+      "TTS_CONTENT_BLOCKED_CHECKPOINT_FAILURE_CODE_INVALID: " +
+      failureCode,
+    );
+  }
+
+  const checkpoint = {
+    schemaVersion: 1,
+    kind: "content-blocked-exhausted",
+    bookSlug,
+    role,
+    providerVoice: voice,
+    chunkIndex: chunk.index,
+    relativePath: path
+      .relative(outRoot, wav)
+      .replaceAll("\\", "/"),
+    spokenScriptSha256: sha256(spokenText),
+    spokenChunkSha256: sha256(chunk.text),
+    recoveryPostsUsed,
+    classifierBlocks,
+    failureCode,
+    sourceCodeSha:
+      process.env.GITHUB_SHA?.trim() ||
+      run("git", ["rev-parse", "HEAD"]),
+    sourceRunId:
+      Number(process.env.GITHUB_RUN_ID ?? 0) ||
+      null,
+  };
+
+  await mkdir(
+    path.dirname(failureFile),
+    { recursive: true },
+  );
+
+  await writeFile(
+    failureFile,
+    `${JSON.stringify(checkpoint, null, 2)}\n`,
+    "utf8",
+  );
+
+  console.log(
+    "Dual-voice terminal content_blocked checkpoint PASS: " +
+    `${checkpoint.relativePath}; ` +
+    `failure=${checkpoint.failureCode}; ` +
+    `recoveryPosts=${checkpoint.recoveryPostsUsed}; ` +
+    `classifierBlocks=${checkpoint.classifierBlocks}.`,
   );
 
   return checkpoint;
@@ -2915,6 +3561,85 @@ function pendingInteractionEntry({
     ...entry,
     pollWindowsUsed,
   };
+}
+
+function contentBlockedFailureEntry({
+  resumeMetadata,
+  outRoot,
+  wav,
+  bookSlug,
+  role,
+  voice,
+  spokenText,
+  chunk,
+}) {
+  if (!resumeMetadata) return null;
+
+  const relativePath = path
+    .relative(outRoot, wav)
+    .replaceAll("\\", "/");
+
+  const entry =
+    resumeMetadata.contentBlockedFailures.find(
+      (candidate) =>
+        String(candidate?.relativePath ?? "") ===
+        relativePath,
+    );
+
+  if (!entry) return null;
+
+  if (
+    entry.schemaVersion !== 1 ||
+    entry.kind !== "content-blocked-exhausted" ||
+    entry.bookSlug !== bookSlug ||
+    entry.role !== role ||
+    entry.providerVoice !== voice ||
+    Number(entry.chunkIndex) !== chunk.index ||
+    entry.spokenScriptSha256 !== sha256(spokenText) ||
+    entry.spokenChunkSha256 !== sha256(chunk.text) ||
+    !/^TTS_(?:CONTENT_BLOCKED_|STREAM_CONTENT_BLOCKED)/u.test(
+      String(entry.failureCode ?? ""),
+    )
+  ) {
+    throw new Error(
+      `DUAL_VOICE_CONTENT_BLOCKED_FAILURE_PROVENANCE_MISMATCH: ${relativePath}`,
+    );
+  }
+
+  if (
+    !Number.isInteger(Number(entry.sourceRunId)) ||
+    Number(entry.sourceRunId) <= 0 ||
+    !/^[0-9a-f]{40}$/u.test(
+      String(entry.sourceSha ?? ""),
+    ) ||
+    !Number.isInteger(Number(entry.artifactId)) ||
+    Number(entry.artifactId) <= 0 ||
+    !/^sha256:[0-9a-f]{64}$/u.test(
+      String(entry.artifactDigest ?? ""),
+    )
+  ) {
+    throw new Error(
+      `DUAL_VOICE_CONTENT_BLOCKED_FAILURE_SOURCE_INVALID: ${relativePath}`,
+    );
+  }
+
+  for (const [name, value] of [
+    ["recoveryPostsUsed", entry.recoveryPostsUsed],
+    ["classifierBlocks", entry.classifierBlocks],
+  ]) {
+    const normalized = Number(value);
+
+    if (
+      !Number.isInteger(normalized) ||
+      normalized < 0
+    ) {
+      throw new Error(
+        `DUAL_VOICE_CONTENT_BLOCKED_FAILURE_COUNTER_INVALID: ${name}=${value}`,
+      );
+    }
+  }
+
+  return entry;
 }
 
 async function resumePendingInteraction({
@@ -3148,6 +3873,10 @@ async function renderVariant({
       chunksRoot,
       `${prefix}.interaction.json`,
     );
+    const contentBlockedFailureFile = path.join(
+      chunksRoot,
+      `${prefix}.content-blocked.json`,
+    );
 
     const chunkTextSha256 = sha256(chunk.text);
     const prompt = directorPrompt(
@@ -3199,6 +3928,56 @@ async function renderVariant({
     }
 
     if (!generated) {
+      const previousContentBlockedFailure =
+        contentBlockedFailureEntry({
+          resumeMetadata,
+          outRoot,
+          wav,
+          bookSlug,
+          role,
+          voice,
+          spokenText,
+          chunk,
+        });
+
+      if (previousContentBlockedFailure) {
+        await writeContentBlockedFailureCheckpoint({
+          failureFile: contentBlockedFailureFile,
+          outRoot,
+          wav,
+          bookSlug,
+          role,
+          voice,
+          spokenText,
+          chunk,
+          error: new Error(
+            `${previousContentBlockedFailure.failureCode}: inherited`,
+          ),
+          recoveryPostsUsedOverride:
+            Number(
+              previousContentBlockedFailure.recoveryPostsUsed,
+            ),
+          classifierBlocksOverride:
+            Number(
+              previousContentBlockedFailure.classifierBlocks,
+            ),
+          failureCodeOverride:
+            String(
+              previousContentBlockedFailure.failureCode,
+            ),
+        });
+
+        throw new Error(
+          "TTS_CONTENT_BLOCKED_PREVIOUS_RUN_EXHAUSTED: " +
+          `${path
+            .relative(outRoot, wav)
+            .replaceAll("\\", "/")}; ` +
+          `sourceRun=${previousContentBlockedFailure.sourceRunId}; ` +
+          `failure=${previousContentBlockedFailure.failureCode}. ` +
+          "A new code release is required before another generation POST.",
+        );
+      }
+
       generated = await resumePendingInteraction({
         apiKey,
         resumeMetadata,
@@ -3213,33 +3992,53 @@ async function renderVariant({
       });
 
       if (!generated) {
-        generated = await callTts(
-          apiKey,
-          voice,
-          prompt,
-          plannedRequests,
-          {
-            spokenChunkSha256: chunkTextSha256,
-            recoveryPrompt,
-            onAcceptedInteraction: async ({
-              interactionId: acceptedInteractionId,
-            }) => {
-              await writePendingInteractionCheckpoint({
-                pendingFile,
-                outRoot,
-                wav,
-                bookSlug,
-                role,
-                voice,
-                spokenText,
-                chunk,
+        try {
+          generated = await callTts(
+            apiKey,
+            voice,
+            prompt,
+            plannedRequests,
+            {
+              spokenChunkSha256: chunkTextSha256,
+              recoveryPrompt,
+              onAcceptedInteraction: async ({
                 interactionId: acceptedInteractionId,
-                pollWindowsUsed: 1,
-                reusedFrom: null,
-              });
+              }) => {
+                await writePendingInteractionCheckpoint({
+                  pendingFile,
+                  outRoot,
+                  wav,
+                  bookSlug,
+                  role,
+                  voice,
+                  spokenText,
+                  chunk,
+                  interactionId: acceptedInteractionId,
+                  pollWindowsUsed: 1,
+                  reusedFrom: null,
+                });
+              },
             },
-          },
-        );
+          );
+        } catch (error) {
+          if (terminalContentBlockedFailure(error)) {
+            await unlink(pendingFile).catch(() => {});
+
+            await writeContentBlockedFailureCheckpoint({
+              failureFile: contentBlockedFailureFile,
+              outRoot,
+              wav,
+              bookSlug,
+              role,
+              voice,
+              spokenText,
+              chunk,
+              error,
+            });
+          }
+
+          throw error;
+        }
 
         successfullySynthesizedTextHashes.add(
           chunkTextSha256,
@@ -3277,6 +4076,9 @@ async function renderVariant({
     });
 
     await unlink(pendingFile).catch(() => {});
+    await unlink(
+      contentBlockedFailureFile,
+    ).catch(() => {});
     await makeSilence(pause, chunk.pauseAfterMs);
 
     const chunkDuration = durationSeconds(wav);
@@ -3492,6 +4294,7 @@ async function main() {
   await validateInteractionResolutionRuntime();
   await validatePendingInteractionPersistenceContract();
   validateCheckpointRecoveryEligibilitySeeding();
+  await validateTtsStreamingRuntime();
   await validateContentBlockedRecoveryRuntime();
 
   const selectedEpisodes = slugs.map((slug) => {
@@ -3577,6 +4380,8 @@ async function main() {
           restoredChunks: resumeMetadata.chunks.length,
           restoredPendingInteractions:
             resumeMetadata.pendingInteractions.length,
+          restoredContentBlockedFailures:
+            resumeMetadata.contentBlockedFailures.length,
         }
       : null,
     assets: [],

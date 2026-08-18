@@ -180,6 +180,31 @@ function pendingInteractionPollWindowsUsed(previous) {
     : 1;
 }
 
+function contentBlockedFailureCounters(previous) {
+  const recoveryPostsUsed = Number(
+    previous?.recoveryPostsUsed,
+  );
+  const classifierBlocks = Number(
+    previous?.classifierBlocks,
+  );
+
+  if (
+    !Number.isInteger(recoveryPostsUsed) ||
+    recoveryPostsUsed < 0 ||
+    !Number.isInteger(classifierBlocks) ||
+    classifierBlocks < 0
+  ) {
+    throw new Error(
+      "Content-blocked failure counters are invalid.",
+    );
+  }
+
+  return {
+    recoveryPostsUsed,
+    classifierBlocks,
+  };
+}
+
 function selfTest() {
   const paragraph = (word, count) =>
     Array.from({ length: count }, (_, i) => `${word}${i}`).join(" ");
@@ -231,12 +256,31 @@ function selfTest() {
     invalidBudgetRejected = true;
   }
 
+  const blockedCounters =
+    contentBlockedFailureCounters({
+      recoveryPostsUsed: 2,
+      classifierBlocks: 2,
+    });
+  let invalidBlockedCountersRejected = false;
+
+  try {
+    contentBlockedFailureCounters({
+      recoveryPostsUsed: -1,
+      classifierBlocks: 2,
+    });
+  } catch {
+    invalidBlockedCountersRejected = true;
+  }
+
   if (
     legacyInitial !== 1 ||
     legacyResumed !==
       MAX_PENDING_INTERACTION_POLL_WINDOWS ||
     explicitOne !== 1 ||
-    !invalidBudgetRejected
+    !invalidBudgetRejected ||
+    blockedCounters.recoveryPostsUsed !== 2 ||
+    blockedCounters.classifierBlocks !== 2 ||
+    !invalidBlockedCountersRejected
   ) {
     throw new Error(
       "Resume seed pending Interaction budget self-test failed.",
@@ -246,7 +290,8 @@ function selfTest() {
   console.log(
     "Dual-voice resume seed self-test PASS: " +
     "deterministic chunks + pending Interaction ID contract + " +
-    "legacy/existing poll-window budget migration.",
+    "legacy/existing poll-window budget migration + " +
+    "terminal content_blocked counter contract.",
   );
 }
 
@@ -303,6 +348,7 @@ async function main() {
 
   const entries = [];
   const pendingInteractions = [];
+  const contentBlockedFailures = [];
 
   for (const bookSlug of BATCHES[options.batch]) {
     const spokenScriptFile = path.join(
@@ -421,36 +467,112 @@ async function main() {
           `${prefix}.interaction.json`,
         );
 
-        if (!(await exists(pendingSidecar))) continue;
-
-        const previous = JSON.parse(
-          await readFile(pendingSidecar, "utf8"),
-        );
         const expectedChunkSha = sha256(chunk.text);
-        const pollWindowsUsed =
-          pendingInteractionPollWindowsUsed(previous);
+
+        if (await exists(pendingSidecar)) {
+          const previous = JSON.parse(
+            await readFile(pendingSidecar, "utf8"),
+          );
+          const pollWindowsUsed =
+            pendingInteractionPollWindowsUsed(previous);
+
+          if (
+            previous.schemaVersion !== 1 ||
+            previous.kind !== "pending-interaction" ||
+            previous.bookSlug !== bookSlug ||
+            previous.role !== role ||
+            previous.providerVoice !== providerVoice ||
+            previous.chunkIndex !== chunk.index ||
+            previous.relativePath !== relativePath ||
+            previous.spokenScriptSha256 !== spokenScriptSha256 ||
+            previous.spokenChunkSha256 !== expectedChunkSha ||
+            !validInteractionId(previous.interactionId) ||
+            previous.sourceCodeSha !== options.sourceSha ||
+            Number(previous.sourceRunId) !== Number(options.sourceRun)
+          ) {
+            throw new Error(
+              `Pending Interaction sidecar mismatch: ${relativePath}`,
+            );
+          }
+
+          pendingInteractions.push({
+            schemaVersion: 1,
+            bookSlug,
+            role,
+            providerVoice,
+            chunkIndex: chunk.index,
+            relativePath,
+            spokenScriptSha256,
+            spokenChunkSha256: expectedChunkSha,
+            interactionId: String(previous.interactionId),
+            pollWindowsUsed,
+            sourceRunId: Number(options.sourceRun),
+            sourceSha: options.sourceSha,
+            artifactId: Number(options.artifactId),
+            artifactDigest: options.artifactDigest,
+          });
+
+          continue;
+        }
+
+        const blockedSidecar = path.join(
+          seedRoot,
+          bookSlug,
+          role,
+          "chunks",
+          `${prefix}.content-blocked.json`,
+        );
+
+        if (!(await exists(blockedSidecar))) {
+          continue;
+        }
+
+        const blocked = JSON.parse(
+          await readFile(blockedSidecar, "utf8"),
+        );
+        const counters =
+          contentBlockedFailureCounters(blocked);
 
         if (
-          previous.schemaVersion !== 1 ||
-          previous.kind !== "pending-interaction" ||
-          previous.bookSlug !== bookSlug ||
-          previous.role !== role ||
-          previous.providerVoice !== providerVoice ||
-          previous.chunkIndex !== chunk.index ||
-          previous.relativePath !== relativePath ||
-          previous.spokenScriptSha256 !== spokenScriptSha256 ||
-          previous.spokenChunkSha256 !== expectedChunkSha ||
-          !validInteractionId(previous.interactionId) ||
-          previous.sourceCodeSha !== options.sourceSha ||
-          Number(previous.sourceRunId) !== Number(options.sourceRun)
+          blocked.schemaVersion !== 1 ||
+          blocked.kind !== "content-blocked-exhausted" ||
+          blocked.bookSlug !== bookSlug ||
+          blocked.role !== role ||
+          blocked.providerVoice !== providerVoice ||
+          blocked.chunkIndex !== chunk.index ||
+          blocked.relativePath !== relativePath ||
+          blocked.spokenScriptSha256 !== spokenScriptSha256 ||
+          blocked.spokenChunkSha256 !== expectedChunkSha ||
+          !/^TTS_(?:CONTENT_BLOCKED_|STREAM_CONTENT_BLOCKED)/u.test(
+            String(blocked.failureCode ?? ""),
+          ) ||
+          blocked.sourceCodeSha !== options.sourceSha ||
+          Number(blocked.sourceRunId) !== Number(options.sourceRun)
         ) {
           throw new Error(
-            `Pending Interaction sidecar mismatch: ${relativePath}`,
+            `Content-blocked sidecar mismatch: ${relativePath}`,
           );
         }
 
-        pendingInteractions.push({
+        const blockedDestination = path.join(
+          outRoot,
+          relativePath.replace(
+            /\.wav$/u,
+            ".content-blocked.json",
+          ),
+        );
+        await mkdir(
+          path.dirname(blockedDestination),
+          { recursive: true },
+        );
+        await copyFile(
+          blockedSidecar,
+          blockedDestination,
+        );
+
+        contentBlockedFailures.push({
           schemaVersion: 1,
+          kind: "content-blocked-exhausted",
           bookSlug,
           role,
           providerVoice,
@@ -458,8 +580,11 @@ async function main() {
           relativePath,
           spokenScriptSha256,
           spokenChunkSha256: expectedChunkSha,
-          interactionId: String(previous.interactionId),
-          pollWindowsUsed,
+          recoveryPostsUsed:
+            counters.recoveryPostsUsed,
+          classifierBlocks:
+            counters.classifierBlocks,
+          failureCode: String(blocked.failureCode),
           sourceRunId: Number(options.sourceRun),
           sourceSha: options.sourceSha,
           artifactId: Number(options.artifactId),
@@ -471,7 +596,8 @@ async function main() {
 
   if (
     entries.length === 0 &&
-    pendingInteractions.length === 0
+    pendingInteractions.length === 0 &&
+    contentBlockedFailures.length === 0
   ) {
     throw new Error(
       "No reusable checkpoint WAV or pending Interaction was found.",
@@ -487,6 +613,7 @@ async function main() {
     artifactDigest: options.artifactDigest,
     chunks: entries,
     pendingInteractions,
+    contentBlockedFailures,
   };
 
   await mkdir(outRoot, { recursive: true });
@@ -498,7 +625,8 @@ async function main() {
 
   console.log(
     `Dual-voice resume seed PASS: ${entries.length} verified chunk(s) + ` +
-    `${pendingInteractions.length} pending Interaction(s) restored.`,
+    `${pendingInteractions.length} pending Interaction(s) + ` +
+    `${contentBlockedFailures.length} terminal content_blocked failure(s) restored.`,
   );
 }
 
