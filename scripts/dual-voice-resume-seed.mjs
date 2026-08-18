@@ -252,6 +252,89 @@ function segmentCountMetadataValid(value, segmentIndex) {
   );
 }
 
+function gitIsAncestor(ancestorSha, descendantSha) {
+  const result = spawnSync(
+    "git",
+    [
+      "merge-base",
+      "--is-ancestor",
+      ancestorSha,
+      descendantSha,
+    ],
+    {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+
+  if (result.status === 0) return true;
+  if (result.status === 1) return false;
+
+  throw new Error(
+    "Resume segment provenance ancestry check failed: " +
+      `${ancestorSha} -> ${descendantSha}; ` +
+      `${result.stderr || result.stdout}`,
+  );
+}
+
+function segmentSourceProvenanceReusable(
+  previous,
+  options,
+  isAncestor = gitIsAncestor,
+) {
+  const previousSha = String(
+    previous?.sourceCodeSha ?? "",
+  );
+  const previousRun = Number(
+    previous?.sourceRunId,
+  );
+  const directSha = String(
+    options?.sourceSha ?? "",
+  );
+  const directRun = Number(
+    options?.sourceRun,
+  );
+
+  if (
+    !/^[0-9a-f]{40}$/u.test(previousSha) ||
+    !Number.isInteger(previousRun) ||
+    previousRun <= 0 ||
+    !/^[0-9a-f]{40}$/u.test(directSha) ||
+    !Number.isInteger(directRun) ||
+    directRun <= 0 ||
+    previousRun > directRun
+  ) {
+    return false;
+  }
+
+  if (
+    previousSha === directSha &&
+    previousRun === directRun
+  ) {
+    return true;
+  }
+
+  return Boolean(
+    isAncestor(previousSha, directSha),
+  );
+}
+
+function reanchorSegmentSidecar(
+  previous,
+  options,
+) {
+  return {
+    ...previous,
+    sourceCodeSha: String(options.sourceSha),
+    sourceRunId: Number(options.sourceRun),
+    reusedFrom: {
+      sourceRunId: Number(previous.sourceRunId),
+      sourceSha: String(previous.sourceCodeSha),
+      previous: previous.reusedFrom ?? null,
+    },
+  };
+}
+
 function run(command, args) {
   const result = spawnSync(command, args, {
     encoding: "utf8",
@@ -472,6 +555,61 @@ function selfTest() {
     invalidBlockedCountersRejected = true;
   }
 
+  const directSourceSha = "b".repeat(40);
+  const ancestorSourceSha = "a".repeat(40);
+  const unrelatedSourceSha = "c".repeat(40);
+  const provenanceOptions = {
+    sourceRun: "200",
+    sourceSha: directSourceSha,
+  };
+  const directProvenance =
+    segmentSourceProvenanceReusable(
+      {
+        sourceCodeSha: directSourceSha,
+        sourceRunId: 200,
+      },
+      provenanceOptions,
+      () => false,
+    );
+  const ancestorProvenance =
+    segmentSourceProvenanceReusable(
+      {
+        sourceCodeSha: ancestorSourceSha,
+        sourceRunId: 100,
+      },
+      provenanceOptions,
+      (ancestor, descendant) =>
+        ancestor === ancestorSourceSha &&
+        descendant === directSourceSha,
+    );
+  const unrelatedProvenance =
+    segmentSourceProvenanceReusable(
+      {
+        sourceCodeSha: unrelatedSourceSha,
+        sourceRunId: 100,
+      },
+      provenanceOptions,
+      () => false,
+    );
+  const futureRunRejected =
+    segmentSourceProvenanceReusable(
+      {
+        sourceCodeSha: ancestorSourceSha,
+        sourceRunId: 201,
+      },
+      provenanceOptions,
+      () => true,
+    );
+  const reanchoredSelfTest =
+    reanchorSegmentSidecar(
+      {
+        sourceCodeSha: ancestorSourceSha,
+        sourceRunId: 100,
+        reusedFrom: null,
+      },
+      provenanceOptions,
+    );
+
   if (
     legacyInitial !== 1 ||
     legacyResumed !==
@@ -480,10 +618,23 @@ function selfTest() {
     !invalidBudgetRejected ||
     blockedCounters.recoveryPostsUsed !== 2 ||
     blockedCounters.classifierBlocks !== 2 ||
-    !invalidBlockedCountersRejected
+    !invalidBlockedCountersRejected ||
+    !directProvenance ||
+    !ancestorProvenance ||
+    unrelatedProvenance ||
+    futureRunRejected ||
+    reanchoredSelfTest.sourceCodeSha !==
+      directSourceSha ||
+    Number(reanchoredSelfTest.sourceRunId) !==
+      200 ||
+    Number(
+      reanchoredSelfTest.reusedFrom?.sourceRunId,
+    ) !== 100 ||
+    reanchoredSelfTest.reusedFrom?.sourceSha !==
+      ancestorSourceSha
   ) {
     throw new Error(
-      "Resume seed pending Interaction budget self-test failed.",
+      "Resume seed pending/provenance self-test failed.",
     );
   }
 
@@ -493,7 +644,8 @@ function selfTest() {
     "legacy/existing poll-window budget migration + " +
     "terminal content_blocked counter contract + " +
     "long-form segment/duration coverage contract + " +
-    "historical segment-count metadata migration contract.",
+    "historical segment-count metadata migration contract + " +
+    "multi-generation segment provenance re-anchor contract.",
   );
 }
 
@@ -789,10 +941,10 @@ async function main() {
                 sha256(segment.text) ||
               checkpoint.wavSha256 !==
                 sha256(wavBytes) ||
-              checkpoint.sourceCodeSha !==
-                options.sourceSha ||
-              Number(checkpoint.sourceRunId) !==
-                Number(options.sourceRun)
+              !segmentSourceProvenanceReusable(
+                checkpoint,
+                options,
+              )
             ) {
               throw new Error(
                 `Segment checkpoint mismatch: ${segmentRelative}`,
@@ -844,14 +996,40 @@ async function main() {
               path.dirname(destination),
               { recursive: true },
             );
+            const reanchoredCheckpoint =
+              reanchorSegmentSidecar(
+                checkpoint,
+                options,
+              );
+
             await copyFile(
               segmentWav,
               destination,
             );
-            await copyFile(
-              segmentCheckpoint,
+            await writeFile(
               checkpointDestination,
+              `${JSON.stringify(
+                reanchoredCheckpoint,
+                null,
+                2,
+              )}\n`,
+              "utf8",
             );
+
+            if (
+              checkpoint.sourceCodeSha !==
+                reanchoredCheckpoint.sourceCodeSha ||
+              Number(checkpoint.sourceRunId) !==
+                Number(
+                  reanchoredCheckpoint.sourceRunId,
+                )
+            ) {
+              console.log(
+                "Resume seed segment checkpoint provenance re-anchor PASS: " +
+                `${segmentRelative}; oldRun=${checkpoint.sourceRunId}; ` +
+                `newRun=${reanchoredCheckpoint.sourceRunId}.`,
+              );
+            }
 
             restoredSegmentCheckpoints += 1;
             continue;
@@ -903,10 +1081,10 @@ async function main() {
               !validInteractionId(
                 pending.interactionId,
               ) ||
-              pending.sourceCodeSha !==
-                options.sourceSha ||
-              Number(pending.sourceRunId) !==
-                Number(options.sourceRun)
+              !segmentSourceProvenanceReusable(
+                pending,
+                options,
+              )
             ) {
               throw new Error(
                 `Segment pending Interaction mismatch: ${segmentRelative}`,
@@ -928,10 +1106,34 @@ async function main() {
               ),
               { recursive: true },
             );
-            await copyFile(
-              segmentPending,
+            const reanchoredPending =
+              reanchorSegmentSidecar(
+                pending,
+                options,
+              );
+
+            await writeFile(
               pendingDestination,
+              `${JSON.stringify(
+                reanchoredPending,
+                null,
+                2,
+              )}\n`,
+              "utf8",
             );
+
+            if (
+              pending.sourceCodeSha !==
+                reanchoredPending.sourceCodeSha ||
+              Number(pending.sourceRunId) !==
+                Number(reanchoredPending.sourceRunId)
+            ) {
+              console.log(
+                "Resume seed segment pending provenance re-anchor PASS: " +
+                `${segmentRelative}; oldRun=${pending.sourceRunId}; ` +
+                `newRun=${reanchoredPending.sourceRunId}.`,
+              );
+            }
 
             restoredSegmentPendingInteractions +=
               1;
