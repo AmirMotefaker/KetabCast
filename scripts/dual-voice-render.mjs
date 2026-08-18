@@ -27,6 +27,7 @@ const MIN_TTS_REQUEST_INTERVAL_MS = 12000;
 const MAX_TTS_SEGMENT_WORDS = 180;
 const MIN_TTS_SEGMENT_WORDS = 80;
 const MIN_AUDIO_SECONDS_PER_WORD = 0.25;
+const MAX_SEGMENT_AUDIO_COVERAGE_ATTEMPTS = 2;
 const DEFAULT_TRANSIENT_429_DELAY_MS = 30000;
 const MAX_TRANSIENT_RETRY_DELAY_MS = 120000;
 
@@ -522,6 +523,7 @@ function validateLongFormSegmentation() {
       (segment) =>
         segment.words > MAX_TTS_SEGMENT_WORDS,
     ) ||
+    MAX_SEGMENT_AUDIO_COVERAGE_ATTEMPTS !== 2 ||
     !audioCoverageSufficient(427.24, 1090) ||
     audioCoverageSufficient(12.84, 1090) ||
     audioCoverageSufficient(75.72, 1101)
@@ -535,7 +537,7 @@ function validateLongFormSegmentation() {
     "Dual-voice long-form segmentation PASS: " +
     `paragraph-first <=${MAX_TTS_SEGMENT_WORDS} words; ` +
     `audio floor=${MIN_AUDIO_SECONDS_PER_WORD.toFixed(2)}s/word; ` +
-    "r14 211-word truncation split; historical segment-count metadata migration PASS.",
+    "r15 110-word truncation coverage recovery=2 PASS; historical segment-count metadata migration PASS.",
   );
 }
 
@@ -554,6 +556,7 @@ function directorPrompt(
   bookSlug,
   chunk,
   classifierRecovery = false,
+  coverageRecovery = false,
 ) {
   const synthesisPreamble = classifierRecovery
     ? [
@@ -605,6 +608,15 @@ function directorPrompt(
     "Tone: warm, intelligent, intimate and trustworthy.",
     "Avoid announcer, advertisement, robotic or over-energetic delivery.",
     "Keep transcript wording exact.",
+    ...(
+      coverageRecovery
+        ? [
+            "Coverage recovery: a previous synthesis response stopped before the transcript ended.",
+            "Read every word between the spoken transcript markers exactly once, from the first word through the final word.",
+            "Do not stop early; continue until all transcript words before the SPOKEN TRANSCRIPT END marker have been spoken.",
+          ]
+        : []
+    ),
     "Do not add or omit words.",
     "Only the text between the spoken transcript markers is spoken content.",
     "",
@@ -4732,7 +4744,17 @@ async function renderCanonicalChunkViaSegments({
         });
     }
 
-    if (!generated) {
+    const coverageDurations = [];
+    let coverageAttempt = 0;
+
+    while (
+      !generated &&
+      coverageAttempt <
+        MAX_SEGMENT_AUDIO_COVERAGE_ATTEMPTS
+    ) {
+      coverageAttempt += 1;
+      const coverageRecovery =
+        coverageAttempt > 1;
       const prompt = directorPrompt(
         segment.text,
         role,
@@ -4740,6 +4762,7 @@ async function renderCanonicalChunkViaSegments({
         bookSlug,
         segmentChunk,
         false,
+        coverageRecovery,
       );
       const recoveryPrompt = directorPrompt(
         segment.text,
@@ -4748,6 +4771,7 @@ async function renderCanonicalChunkViaSegments({
         bookSlug,
         segmentChunk,
         true,
+        coverageRecovery,
       );
 
       generated = await callTts(
@@ -4793,14 +4817,36 @@ async function renderCanonicalChunkViaSegments({
         duration,
         segment.words,
       )) {
+        coverageDurations.push(
+          Number(duration.toFixed(3)),
+        );
         await unlink(files.pending).catch(() => {});
         await unlink(files.wav).catch(() => {});
+
+        if (
+          coverageAttempt <
+          MAX_SEGMENT_AUDIO_COVERAGE_ATTEMPTS
+        ) {
+          console.log(
+            "Gemini TTS segment coverage recovery; " +
+            "discarded short audio and retrying the exact segment once " +
+            "with explicit complete-recitation framing. " +
+            `attempt=${coverageAttempt}/${MAX_SEGMENT_AUDIO_COVERAGE_ATTEMPTS}; ` +
+            `duration=${duration.toFixed(3)}s; words=${segment.words}; ` +
+            `minimum=${audioCoverageMinimumSeconds(segment.words).toFixed(3)}s.`,
+          );
+          generated = null;
+          continue;
+        }
+
         throw new Error(
-          "TTS_SEGMENT_AUDIO_TOO_SHORT: " +
+          "TTS_SEGMENT_AUDIO_COVERAGE_RECOVERY_EXHAUSTED: " +
           `${path.relative(outRoot, files.wav).replaceAll("\\", "/")}; ` +
-          `duration=${duration.toFixed(3)}s; ` +
+          `attempts=${MAX_SEGMENT_AUDIO_COVERAGE_ATTEMPTS}; ` +
+          `durations=${coverageDurations.map((value) => value.toFixed(3)).join(",")}s; ` +
           `words=${segment.words}; ` +
-          `minimum=${audioCoverageMinimumSeconds(segment.words).toFixed(3)}s.`,
+          `minimum=${audioCoverageMinimumSeconds(segment.words).toFixed(3)}s; ` +
+          "new source release required before another fresh coverage attempt.",
         );
       }
 
@@ -4815,10 +4861,25 @@ async function renderCanonicalChunkViaSegments({
         chunk,
         segment,
         segmentCount: segments.length,
-        reusedFrom: null,
+        reusedFrom:
+          coverageRecovery
+            ? {
+                coverageRecoveryAttempt:
+                  coverageAttempt,
+              }
+            : null,
       });
 
       await unlink(files.pending).catch(() => {});
+
+      if (coverageRecovery) {
+        console.log(
+          "Dual-voice segment coverage recovery PASS: " +
+          `${path.relative(outRoot, files.wav).replaceAll("\\", "/")}; ` +
+          `attempt=${coverageAttempt}/${MAX_SEGMENT_AUDIO_COVERAGE_ATTEMPTS}; ` +
+          `duration=${duration.toFixed(3)}s; words=${segment.words}.`,
+        );
+      }
     }
 
     successfullySynthesizedTextHashes.add(
