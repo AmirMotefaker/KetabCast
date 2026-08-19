@@ -1,0 +1,430 @@
+# 📖 Zobdino (زبدینو) — Master Product & Engineering Document
+**نسخه سند:** v1.0 | **تاریخ:** آگوست ۲۰۲۶ | **مالک محصول:** Amir Motefaker (بنیان‌گذار / CTO)
+
+> **Brand note — v0.2.0-beta.2:** برند رسمی محصول **Zobdino / زبدینو** است. نام repository و evidence/releaseهای تاریخی برای حفظ provenance فعلاً KetabCast باقی می‌مانند.
+**مخاطب این سند:** هر انسان یا هوش مصنوعی (Claude, GPT, Gemini, Cursor Agent, Codex...) که قرار است روی این ریپو کار کند.
+
+> این فایل باید در ریشه ریپو باشد و همراه با `AGENTS.md` / `CLAUDE.md` خوانده شود. هر عاملی که این فایل را می‌خواند باید ابتدا بخش «۰. خلاصه اجرایی» و «۱۳. نقشه‌راه دقیق» را بخواند تا بفهمد الان دقیقاً در کدام فاز است.
+
+---
+
+## ۰. خلاصه اجرایی (Executive Summary)
+
+**زبدینو (Zobdino)** یک پلتفرم فارسی‌زبان Open Source است که خلاصه‌ی کتاب‌های ارزشمند (غیرداستانی در اولویت اول: کسب‌وکار، روان‌شناسی، رشد فردی، تاریخ) را به شکل **اپیزودهای صوتی کوتاه فارسی (۱۰–۱۸ دقیقه)** با کیفیت استودیویی و روایت جذاب تبدیل می‌کند؛ با کمک یک پایپ‌لاین هوش مصنوعی end-to-end (متن → خلاصه → اسکریپت صوتی → TTS فارسی → پست‌پروداکشن).
+
+وضعیت فعلی ریپو (`main` branch):
+- **v0.2.0-beta.1 — Public Audio Beta** ✅ دو اپیزود واقعی Atomic Habits و Deep Work روی GitHub Pages زنده‌اند.
+- **v0.2.0-beta.2 — Zobdino Brand Refresh** ✅ برند فعال محصول **Zobdino / زبدینو** است و GitHub/README/About/UI metadata به‌روزرسانی می‌شوند.
+- دامنه **zobdino.ir** ثبت شده؛ DNS/HTTPS/custom-domain cutover milestone مستقل بعدی است.
+- v0.2.0-beta.5 ✅ هر ۵ اپیزود production روی GitHub Release Assets و GitHub Pages زنده‌اند؛ Sulafat/Schedar برای Dual-Voice production انتخاب شده‌اند.
+- هدف MVP صوت: **۵ از ۵ اپیزود واقعی ✅**؛ milestone بعدی تولید و promotion دو صدای Sulafat/Schedar بدون حذف Piper fallback است.
+- v0.2.0-beta.5.1.1 — Gemini TTS Retry-After hotfix: 429 کوتاه‌مدت با retry hint دیگر daily quota تلقی نمی‌شود؛ صفحه اصلی نیز وضعیت milestone و پیشرفت Dual Voice را از GitHub Pages نمایش می‌دهد.
+- v0.2.0-beta.5.1.2 — Gemini TTS Retry Policy v2: سه attempt برای هر chunk، retry صریح 408/429/5xx، backoff+jitter، pacing دوازده‌ثانیه‌ای و hard cap ده درخواست؛ Batch A هنوز ۰/۱۰ و آماده rerun کنترل‌شده است.
+- v0.2.0-beta.5.1.3 — Dual-Voice media publication hardening: artifact recovery قبل از media publication ذخیره می‌شود و assetها با filename canonical واقعی، SHA/bytes و download-back integrity منتشر می‌شوند؛ Batch A هنوز ۰/۱۰ است.
+- v0.2.0-beta.5.1.4 — Gemini TTS Interaction completion polling: پاسخ 2xx دارای Interaction ID دیگر POST تکراری ایجاد نمی‌کند؛ همان Interaction تا completion با GET poll می‌شود، delivery صوت inline است و URI fallback نیز پشتیبانی می‌شود؛ Batch A هنوز ۰/۱۰ است.
+- v0.2.0-beta.5.1.5 — Gemini TTS audio response-format contract: delivery صریح از response_format حذف شد و contract رسمی type=audio حفظ شد؛ Interaction polling، Retry Policy v2 و media hardening بدون تغییر باقی ماندند؛ Batch A هنوز ۰/۱۰ است.
+- v0.2.0-beta.5.1.6 — Approved Sulafat/Schedar preview روی GitHub Pages منتشر شد؛ این milestone فقط preview UI/assets بود و production episode metadata/Piper را تغییر نداد.
+- v0.2.0-beta.5.1.7 — Gemini completed-Interaction audio materialization grace: completed بدون audio دیگر فوراً fail نمی‌شود؛ همان Interaction ID با GET مستقل و bounded تا ۶ poll برای materialization دنبال می‌شود؛ duplicate POST ممنوع و Batch A هنوز ۰/۱۰ است.
+- v0.2.0-beta.5.1.8 — Gemini TTS content_blocked classifier recovery: prompt با speech-synthesis preamble صریح و transcript markers سخت‌تر شد؛ فقط transcript chunkی که قبلاً در همان run با صدای دیگر موفق شده باشد یک alternate-framing recovery می‌گیرد، سقف recovery دو POST و hard cap کل ۱۰ باقی می‌ماند؛ safety settings و transcript تغییر نمی‌کنند؛ Batch A هنوز ۰/۱۰ است.
+- v0.2.0-beta.5.1.9 — Gemini completed/no-audio long materialization window: Run 31597210578 ثابت کرد سقف ۶ poll (~۳۰s) برای Schedar کافی نیست؛ همان Interaction ID اکنون با GETهای ۵ ثانیه‌ای تا سقف timeout موجود ۱۵ دقیقه (۱۸۰ poll) دنبال می‌شود؛ هیچ generation POST جدیدی پس از accepted ID ساخته نمی‌شود و hard cap=10 / recovery POST budget=2 بدون تغییر می‌ماند؛ Batch A هنوز ۰/۱۰ است.
+- v0.2.0-beta.5.1.10 — Batch A resilience: Run 31601664847 نشان داد recovery اول Schedar با 429 transient مصرف شد و recovery بعدی content_blocked شد؛ Batch A اکنون به batch-a-atomic و batch-a-deep-work با ۴ POST پایه در هر sub-run تقسیم می‌شود، hard cap کل هر run همچنان ۱۰ است، recovery network cap=4 و classifier-block cap=2 جداگانه enforce می‌شوند، و failure checkpoint قبل از QA ذخیره می‌شود؛ transcript/safety/player/Piper بدون تغییر و Batch A هنوز ۰/۱۰ است.
+
+هدف این سند: تعریف کامل محصول تا نسخه ۱.۰ (Production Platform) به‌طوری‌که هر AI Agent با خواندن این فایل بتواند بدون پرسیدن سؤال از صفر تا صد کار را جلو ببرد.
+
+---
+
+## ۱. چشم‌انداز و مأموریت
+
+**چشم‌انداز:** تبدیل زبدینو به Blinkist/Headway فارسی‌زبان منطقه (ایران + جامعه فارسی‌زبان افغانستان/تاجیکستان/دیاسپورا)، جایی که یادگیری از کتاب در حین رانندگی، ورزش یا کار روزمره اتفاق می‌افتد.
+
+**مأموریت:** «هر کتاب ارزشمند، یک اپیزود فارسی شنیدنی» — با صداقت محتوایی (بدون توهم AI، بدون تحریف نویسنده)، کیفیت صوتی حرفه‌ای، و دسترسی رایگان یا مقرون‌به‌صرفه.
+
+**اصول محصول (Product Principles):**
+1. **Audio-first, mobile-first** — تجربه باید مثل یک اپ پادکست واقعی حس شود، نه یک وب‌سایت با فایل صوتی.
+2. **صداقت محتوایی** — هر اپیزود باید دقیق، امانت‌دار به ایده‌های نویسنده و بدون توهم (hallucination) باشد؛ Disclaimer همیشه واضح.
+3. **کیفیت صدا > کمیت** — بهتر است ۲۰ کتاب با کیفیت عالی از ۲۰۰ کتاب نصفه‌کاره.
+4. **Open Source Core** — هسته محصول (کد، معماری) باز بماند؛ مدل درآمدی از محتوا/اشتراک می‌آید نه از بستن کد.
+5. **Legal-safe by design** — رعایت کپی‌رایت از روز اول در معماری لحاظ شود، نه بعداً.
+
+---
+
+## ۲. مسئله و فرصت بازار
+
+- بازار فارسی‌زبان کتاب صوتی/خلاصه کتاب (نوار، طاقچه، فیدیبو، کتابراه) عمدتاً روی **کتاب کامل** یا **پادکست‌های معمولی** متمرکز است، نه فرمت «خلاصه ۱۵ دقیقه‌ای با کیفیت روایت‌گری».
+- الگوهای جهانی موفق: Blinkist، Headway، Shortform — بازار میلیارد دلاری با Retention بالا در بخش B2C اشتراکی.
+- فرصت: هیچ رقیب فارسی جدی با **پایپ‌لاین AI + صدای طبیعی فارسی** در این فرمت خاص وجود ندارد (نوار/کتابراه صداپیشه انسانی برای کتاب کامل دارند، نه خلاصه AI-narrated).
+- ریسک بازار: TTS فارسی طبیعی هنوز از نظر کیفیت به سطح انگلیسی نرسیده — این مهم‌ترین ریسک فنی محصول است (بخش ۷ را ببینید).
+
+---
+
+## ۳. پرسونای کاربر
+
+| پرسونا | توصیف | نیاز اصلی |
+|---|---|---|
+| **حرفه‌ای پرمشغله (Ali, 29, مدیر محصول)** | روزانه ۴۰ دقیقه رفت‌وآمد، وقت کتاب‌خوانی ندارد | خلاصه سریع، قابل گوش‌دادن در مترو/ماشین |
+| **دانشجوی خودآموز (Sara, 22)** | می‌خواهد قبل از خرید کتاب، ارزشش را بسنجد | Preview رایگان + امکان یادداشت‌برداری |
+| **علاقه‌مند رشد فردی (Reza, 35)** | دنبال روتین یادگیری روزانه است | پلی‌لیست، یادآوری روزانه، Streak |
+| **ناشر/نویسنده (پارتنر بالقوه)** | نگران کپی‌رایت و برندینگ کتابش است | لینک به خرید کتاب کامل، Attribution واضح |
+
+---
+
+## ۴. تحلیل رقابتی و تمایز
+
+| | Blinkist/Headway | نوار/کتابراه (فارسی) | **زبدینو** |
+|---|---|---|---|
+| زبان | انگلیسی/چندزبانه ضعیف در فارسی | فارسی | فارسی native، نه ترجمه |
+| فرمت | متن + صدا (صداپیشه انسانی گران) | کتاب کامل صوتی | خلاصه صوتی AI-assisted، تولید سریع و مقیاس‌پذیر |
+| هزینه تولید محتوا | بالا (تیم نویسنده+صداپیشه) | بالا | پایین‌تر (AI Pipeline + QA انسانی سبک) |
+| سرعت افزودن کتاب جدید | هفته‌ها | هفته‌ها | روزها (هدف v1.0) |
+| Open Source | خیر | خیر | بله (هسته) |
+
+**تمایز اصلی ما:** سرعت تولید محتوا با AI + کیفیت روایت‌گری فارسی طبیعی + متن‌باز بودن که اعتماد و مشارکت جامعه را جلب می‌کند.
+
+---
+
+## ۵. مجموعه ویژگی‌ها (Feature Set) — کامل تا v1.0
+
+### ۵.۱ لایه مصرف‌کننده (Consumer App)
+- [x] صفحه اصلی با لیست کتاب‌ها (Grid/List)
+- [x] صفحه اختصاصی هر کتاب: جلد، ایده‌های کلیدی (Key Takeaways)، ترنسکریپت کامل
+- [x] **پلیر صوتی اختصاصی پایه** (Play/Pause و اسکیپ ۱۵ ثانیه)
+- [x] **پلیر v0.2 alpha**: سرعت پخش، Progress/Seek، مدیریت loading/error و کنترل‌های دسترس‌پذیر
+- [ ] **دانلود/آفلاین واقعی در v0.2**: پس از جایگزینی placeholderها با صوت production
+- [ ] **جست‌وجو و فیلتر** (دسته‌بندی، مدت‌زمان، سطح، محبوب‌ترین)
+- [ ] **پروفایل کاربر**: تاریخچه گوش‌دادن، بوکمارک، یادداشت شخصی روی هر Timestamp
+- [ ] **پلی‌لیست و مجموعه‌ها** (مثلاً «مجموعه رهبری در ۵ کتاب»)
+- [ ] **یادآوری روزانه / Streak** (نوتیفیکیشن push، گیمیفیکیشن ساده)
+- [ ] **حالت آفلاین** (PWA + دانلود اپیزود)
+- [ ] **اشتراک‌گذاری اجتماعی** (کارت خلاصه هر ایده برای استوری اینستاگرام)
+- [ ] **امتیازدهی و نظر کاربران** روی هر اپیزود
+- [ ] **توصیه‌گر هوشمند** (بر اساس تاریخچه گوش‌دادن)
+- [ ] اپلیکیشن موبایل (React Native / Capacitor روی همان Next.js codebase در فاز بعد)
+
+### ۵.۲ لایه محتوا و AI Pipeline (مهم‌ترین بخش محصول)
+پایپ‌لاین ۷ مرحله‌ای از انتخاب کتاب تا انتشار اپیزود:
+
+1. **Book Sourcing** — انتخاب کتاب (کمیته محتوا/الگوریتم اولویت‌بندی بر اساس تقاضا)
+2. **Rights & Legal Check** — بررسی که آیا خلاصه‌نویسی از این کتاب زیر «fair use / نقد و بررسی» قرار می‌گیرد یا نیاز به اجازه ناشر دارد (بخش ۹)
+3. **Source Extraction** — استخراج ساختار و ایده‌های اصلی کتاب (از خلاصه‌های عمومی موجود، نه کپی متن کامل کتاب — هرگز متن کتاب را wholesale وارد پرامپت نکنید)
+4. **AI Summarization → Script** — تبدیل ایده‌ها به اسکریپت روایی فارسی با LLM (پرامپت استاندارد در بخش ۱۰)
+5. **Human/AI QA Review** — بررسی صحت محتوا، لحن، عدم توهم؛ ویرایشگر انسانی تأیید نهایی می‌دهد
+6. **TTS + Post-production** — تبدیل اسکریپت به صدا (بخش ۷.۳)، افزودن موزیک زمینه، مسترینگ صدا
+7. **Publish** — آپلود به CDN، ثبت متادیتا در دیتابیس، انتشار
+
+**ابزار داخلی لازم:** یک **CMS/Admin Dashboard** برای مدیریت این پایپ‌لاین (وضعیت هر کتاب: Draft → Scripted → In Review → Voiced → Published).
+
+### ۵.۳ لایه کسب‌وکار
+- [ ] مدل Freemium: ۳ اپیزود رایگان در ماه + اشتراک نامحدود
+- [ ] پرداخت: **Zarinpal / IDPay** (درگاه ایرانی، چون Stripe/PayPal برای کاربر ایرانی در دسترس نیست) + گزینه بین‌المللی (Stripe) برای دیاسپورا
+- [ ] توزیع اپ: **Cafe Bazaar / Myket** علاوه بر وب، چون Google Play در ایران محدودیت دارد
+- [ ] پنل تحلیلی برای مدیر محصول (Retention, DAU/MAU, Completion Rate, Churn)
+
+---
+
+## ۶. معماری فنی (Technical Architecture)
+
+### ۶.۱ وضعیت فعلی
+```
+Next.js (App Router, TS) ---> Static Export (SSG) ---> GitHub Pages
+```
+مشکل: Static-only یعنی هیچ کاربر، دیتابیس، پرداخت یا API پویا ممکن نیست. **این باید در v0.3 عوض شود.**
+
+### ۶.۲ معماری هدف (v1.0)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Frontend: Next.js (App Router, TS, Tailwind v4)         │
+│  Hosting: Vercel (یا Cloudflare Pages)                    │
+└─────────────────────────────────────────────────────────┘
+              │ REST/tRPC API
+┌─────────────────────────────────────────────────────────┐
+│  Backend: Next.js API Routes / Route Handlers            │
+│  Auth: NextAuth.js (یا Clerk) + شماره موبایل ایرانی (OTP) │
+│  DB: PostgreSQL (Supabase پیشنهادی — Auth+DB+Storage یکجا)│
+│  ORM: Prisma / Drizzle                                    │
+└─────────────────────────────────────────────────────────┘
+              │
+┌─────────────────────────────────────────────────────────┐
+│  Storage: Supabase Storage / Cloudflare R2 (فایل صوتی)   │
+│  CDN: Cloudflare (پخش صوت با تأخیر کم برای کاربر ایران)  │
+└─────────────────────────────────────────────────────────┘
+              │
+┌─────────────────────────────────────────────────────────┐
+│  AI Pipeline (سرویس جدا، Node/Python worker):             │
+│  - LLM: Claude API (خلاصه‌سازی و نویسندگی اسکریپت)         │
+│  - TTS: بخش ۷.۳ (چند گزینه فارسی)                          │
+│  - Queue: BullMQ / Trigger.dev برای پردازش async           │
+└─────────────────────────────────────────────────────────┘
+```
+
+### ۶.۳ ساختار پوشه‌بندی پیشنهادی (Monorepo آماده برای رشد)
+```
+KetabCast/
+├── apps/
+│   ├── web/                # Next.js اصلی (همین کد فعلی)
+│   └── admin/               # CMS Dashboard برای مدیریت پایپ‌لاین محتوا
+├── packages/
+│   ├── ai-pipeline/         # سرویس Node/Python: summarization + TTS orchestration
+│   ├── db/                  # Prisma schema + migrations مشترک
+│   └── ui/                  # کامپوننت‌های مشترک (اگر admin هم Next.js شد)
+├── AGENTS.md / CLAUDE.md
+├── ZOBDINO_MASTER_DOC.md  # همین فایل
+└── README.md
+```
+
+---
+
+## ۷. تصمیمات فنی حیاتی و ریسک‌ها
+
+### ۷.۱ چالش اصلی: کیفیت TTS فارسی
+گزینه‌ها (باید تست A/B شود قبل از قفل نهایی):
+1. **ElevenLabs** — کیفیت صدای طبیعی بالا، پشتیبانی فارسی محدود/نوظهور؛ **ریسک: دسترسی API از ایران به دلیل تحریم‌ها معمولاً نیاز به زیرساخت خارج از ایران و روش پرداخت بین‌المللی دارد.**
+2. **Azure Speech / Google Cloud TTS (فارسی)** — پایدارتر برای production، صدای فارسی طبیعی نسبتاً خوب (Azure `fa-IR` voices).
+3. **صداپیشه انسانی برای اپیزودهای پرچمدار + AI TTS برای مقیاس** — رویکرد هیبریدی پیشنهادی برای شروع: چند اپیزود اول را با صدای انسانی واقعی ضبط کنید تا استاندارد کیفیت را تعیین کند، سپس AI TTS را با همان استاندارد Voice Cloning (در صورت رضایت صداپیشه) مقیاس دهید.
+
+**توصیه:** فاز v0.2 با ترکیب «اسکریپت AI + صدای انسانی واقعی» شروع شود (اعتبار محصول را می‌سازد)، و v0.3 گذار تدریجی به TTS تمام‌خودکار با کنترل کیفیت سخت‌گیرانه.
+
+### ۷.۲ دسترسی به API‌های AI از ایران
+هم OpenAI و هم Anthropic و هم بسیاری سرویس‌های ابری، دسترسی مستقیم API از IP ایران را محدود می‌کنند. برای تیم فنی این یعنی:
+- سرویس AI Pipeline باید روی سرور خارج از ایران (مثلاً یک VPS در آلمان/ترکیه، یا Vercel/Cloudflare Workers) اجرا شود، نه روی سرور داخل ایران.
+- این را باید در طراحی زیرساخت از روز اول لحاظ کرد (بخش ۶.۲ به همین دلیل AI Pipeline را به‌صورت سرویس جدا و قابل استقرار در هر Region طراحی کرده).
+
+### ۷.۳ کپی‌رایت محتوای خلاصه کتاب
+مهم‌ترین ریسک حقوقی محصول:
+- خلاصه‌نویسی «نقد و تحلیل مستقل» (مثل کاری که Blinkist انجام می‌دهد) عموماً زیر doctrine نقل ایده (Idea, not Expression) قابل دفاع است، اما **کپی مستقیم جملات کتاب یا بازنویسی نزدیک به متن اصلی خطر تخلف کپی‌رایت دارد.**
+- قوانین کپی‌رایت داخلی ایران با استانداردهای بین‌المللی (برن) متفاوت است و اجرای آن ضعیف‌تر است، اما برای مشارکت با ناشران بین‌المللی و اعتبار برند باید طبق بهترین‌عمل جهانی رفتار شود.
+- **قانون طلایی برای AI Pipeline:** پرامپت خلاصه‌سازی هرگز نباید متن کامل کتاب را به مدل بدهد و بخواهد «خلاصه/بازنویسی» کند؛ در عوض باید از **ساختار ایده‌ها، فصل‌بندی، و مفاهیم کلیدی** (که خودشان قابل کپی‌رایت نیستند) شروع کند و اسکریپت را از صفر با کلمات خودِ کتاب‌کست بنویسد.
+- Disclaimer فعلی ریپو («کتاب‌کست محتوای خلاصه و تحلیلی مستقل ارائه می‌کند») درست است — باید در هر صفحه کتاب و هر اپیزود دیده شود.
+
+---
+
+## ۸. مدل داده (Schema پیشنهادی — Prisma-style)
+
+```prisma
+model Book {
+  id            String   @id @default(cuid())
+  title         String
+  author        String
+  coverUrl      String
+  category      Category[]
+  originalLang  String
+  isbn          String?
+  publisherLink String?  // لینک خرید نسخه کامل کتاب — بخش مهم استراتژی حقوقی/پارتنرشیپ
+  status        BookStatus @default(DRAFT) // DRAFT, SCRIPTED, IN_REVIEW, VOICED, PUBLISHED
+  episode       Episode?
+  createdAt     DateTime @default(now())
+}
+
+model Episode {
+  id            String   @id @default(cuid())
+  bookId        String   @unique
+  book          Book     @relation(fields: [bookId], references: [id])
+  audioUrl      String
+  durationSec   Int
+  transcript    String   @db.Text
+  keyTakeaways  Json     // آرایه‌ای از { timestamp, idea }
+  voiceType     VoiceType // HUMAN, AI_TTS, HYBRID
+  publishedAt   DateTime?
+}
+
+model User {
+  id            String   @id @default(cuid())
+  phone         String   @unique   // OTP-based auth مناسب کاربر ایرانی
+  displayName   String?
+  subscription  Subscription?
+  listenHistory ListenProgress[]
+  bookmarks     Bookmark[]
+}
+
+model Subscription {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  plan       Plan     // FREE, MONTHLY, YEARLY
+  provider   String   // zarinpal, stripe
+  status     String
+  expiresAt  DateTime
+}
+
+model ListenProgress {
+  userId      String
+  episodeId   String
+  progressSec Int
+  completed   Boolean @default(false)
+  @@id([userId, episodeId])
+}
+```
+
+---
+
+## ۹. راهنمای پرامپت‌نویسی برای پایپ‌لاین AI (استاندارد داخلی)
+
+**پرامپت پایه برای تولید اسکریپت اپیزود (نمونه ساختاری، نه برای کپی مستقیم متن کتاب):**
+
+```
+نقش: تو نویسنده اسکریپت پادکست کتاب‌کست هستی.
+ورودی: فهرست ایده‌های کلیدی کتاب [نام کتاب] به‌صورت bullet point (نه متن اصلی کتاب).
+خروجی مطلوب:
+۱. مقدمه‌ای جذاب ۳۰ ثانیه‌ای که چرا این کتاب مهم است.
+۲. ۴ تا ۶ ایده اصلی، هرکدام با یک مثال ملموس یا داستان کوتاه.
+۳. جمع‌بندی و یک "اقدام عملی امروز" برای شنونده.
+۴. لحن: صمیمی، فارسی روان، نه ترجمه‌ای، مثل یک دوست باتجربه که کتاب را خوانده.
+قوانین سخت:
+- هرگز جمله‌ای مستقیم از متن اصلی کتاب کپی نکن.
+- اگر مطمئن نیستی یک ادعا درست است، آن را حذف کن (no hallucination).
+- طول اسکریپت باید برای ۱۲–۱۵ دقیقه گفتار طبیعی فارسی باشد (~۱۸۰۰–۲۲۰۰ کلمه).
+```
+
+این پرامپت باید در `packages/ai-pipeline/prompts/episode-script.md` نگهداری و نسخه‌بندی شود.
+
+---
+
+## ۱۰. سیستم طراحی (Design System)
+
+- **رنگ پایه:** تم تاریک با لهجه بنفش (Purple accent) — حفظ هویت بصری فعلی
+- **فونت:** وزیرمتن (Vazirmatn) — همان فونت فعلی، مناسب RTL
+- **جهت:** RTL کامل، تست دقیق روی همه کامپوننت‌ها (پلیر صوتی خصوصاً باید RTL-aware باشد: دکمه جلو/عقب باید جهت درست داشته باشد)
+- **اصل موبایل‌فرست:** تمام کامپوننت‌های جدید باید ابتدا برای صفحه ۳۷۵px طراحی شوند.
+- در صورت نیاز به بازطراحی بخشی از UI، از `frontend-design` skill و توکن‌های طراحی استاندارد پروژه استفاده شود، نه رنگ‌های دلبخواهی.
+
+---
+
+## ۱۱. الزامات غیرعملکردی (Non-Functional Requirements)
+
+| حوزه | الزام |
+|---|---|
+| کارایی | Time-to-first-audio-byte < ۱ ثانیه (CDN caching) |
+| دسترسی‌پذیری (a11y) | پلیر صوتی باید Keyboard-accessible و Screen-reader friendly باشد |
+| آفلاین | PWA با قابلیت دانلود اپیزود برای شنیدن بدون اینترنت (اینترنت ایران معمولاً کند/ناپایدار است) |
+| امنیت | Rate limiting روی API، اعتبارسنجی OTP، جلوگیری از دانلود غیرمجاز فایل صوتی (Signed URL با انقضا) |
+| مقیاس‌پذیری | معماری باید از ۱۰۰ کتاب به ۱۰,۰۰۰ کتاب بدون بازنویسی اساسی مقیاس یابد |
+| مانیتورینگ | Sentry برای خطاها، PostHog/Umami برای آنالیتیکس (به دلیل حریم خصوصی، از GA پرهیز و ترجیحاً self-hosted analytics) |
+
+---
+
+## ۱۲. مدل درآمدی و استراتژی رشد
+
+**درآمد:**
+- اشتراک ماهانه/سالانه (Freemium: ۳ اپیزود رایگان در ماه)
+- پارتنرشیپ با ناشران (لینک ارجاع به خرید کتاب کامل → کمیسیون Affiliate)
+- نسخه سازمانی/B2B (اشتراک تیمی برای شرکت‌ها — یادگیری سازمانی)
+
+**رشد (Growth Loops):**
+- اشتراک‌گذاری کارت «ایده روز» در اینستاگرام/تلگرام با لینک بازگشت به اپ
+- SEO روی صفحه هر کتاب (خلاصه متنی + ترنسکریپت ایندکس‌پذیر گوگل)
+- محتوای رایگان روزانه در کانال تلگرام برای جذب Top-of-funnel
+
+---
+
+## ۱۳. نقشه‌راه دقیق (Roadmap) — این بخش را همیشه اول بخوان
+
+### ✅ v0.1.0 — Foundation (انجام‌شده)
+Next.js App Router, TS, Tailwind v4, تم تاریک/بنفش, RTL/وزیرمتن, صفحه کتاب با placeholder صدا, Static Export + GitHub Pages, GitHub Actions CI.
+
+### 🔨 v0.2.0 — Audio واقعی (فاز بعدی، اولویت الان)
+- [ ] ضبط/تولید ۵ اپیزود واقعی (صدای انسانی یا TTS باکیفیت) به‌عنوان MVP محتوایی
+- [x] قرارداد Audio metadata + URL strategy آماده CDN/R2 (`v0.2.0-alpha.1`)
+- [x] ابزار اعتبارسنجی/ingest صوت و guard کاراکترهای کنترلی (v0.2.0-alpha.2)
+- [x] کارخانه آنلاین محتوای free-first: legal web research → Persian script → Piper TTS → Whisper QA → R2 orchestration (`v0.2.0-alpha.3`)
+- [x] storage رایگان production با GitHub Release Assets و download-back SHA-256 gate (v0.2.0-alpha.4)
+- [x] Workers AI Structured JSON Mode + bounded retry + legal metadata source accounting (v0.2.0-alpha.5)
+- [x] bounded long-form Persian generation: plan + opening + 5 ideas + conclusion + word-range QA (v0.2.0-alpha.6)
+- [x] near-boundary section tolerance after strict retries + hard global transcript QA (v0.2.0-alpha.7)
+- [x] GitHub Actions hidden factory-artifact transport + credential-leak guard (v0.2.0-alpha.8)
+- [x] free AI failover experiment: Cloudflare daily quota → GitHub Models (v0.2.0-alpha.9; provider retired upstream)
+- [x] Gemini 3.1 Flash-Lite source-pack generation + retired GitHub Models removal (v0.2.0-alpha.10)
+- [x] Persian Voice Lab automation: Gemini 3.1 TTS auditions + fa-IR pronunciation/prosody + podcast mix demos (v0.2.0-alpha.11)
+- [x] Gemini TTS audio contract + PCM-to-MP3 Voice Lab hotfix (v0.2.0-alpha.11.1)
+- [x] Human voice selection: female Sulafat/Warm + male Schedar/Even (Voice Lab run 31462344234)
+- [x] Full dual-voice pre-publication review pipeline using pinned alpha.10 scripts (v0.2.0-alpha.12)
+- [x] Gemini TTS free-tier request-budget hotfix: 8 planned / 10 hard cap (v0.2.0-alpha.12.1)
+- [x] Public beta launch with 2 exact reviewed real-audio GitHub Release Assets (v0.2.0-beta.1)
+- [x] Zobdino public brand refresh: README, About, active UI metadata and GitHub profile (v0.2.0-beta.2)
+- [x] Five-book MVP catalog + Discovery UX + factory support: Think Again، Zero to One، تیم ایدئال (v0.2.0-beta.3)
+- [x] Next-Gen Listening Experience: global audio session, Resume/Continue Listening, Up Next, Sleep Timer, bookmarks, timestamp share, Media Session, keyboard controls and searchable/cue-ready transcript (v0.2.0-beta.4)
+- [x] New-three factory batch: subset-safe research/script/audio/upload/promotion for Think Again، Zero to One و تیم ایدئال (v0.2.0-beta.4.1)
+- [x] Verified new-episode append contract: promotion may create a missing episode only after Release Asset integrity verification (v0.2.0-beta.4.2)
+- [ ] یکپارچه‌سازی پلیر با فایل صوتی واقعی + verified GitHub Release Asset URL (R2 اختیاری برای آینده)
+- [x] Progress/Seek، سرعت پخش، loading/error state و a11y پلیر (`v0.2.0-alpha.1`)
+- [ ] دانلود/آفلاین واقعی پس از ingest فایل‌های production
+- [ ] صفحه ترنسکریپت هم‌گام با پخش صدا (Karaoke-style highlight، اختیاری)
+- [ ] تست کیفیت روی موبایل واقعی (اینترنت ایران، اندروید رایج)
+
+> تصمیم ۲۰۲۶-۰۸-۱۰: برای سرعت v0.2، یک Content Factory بدون backend و مبتنی بر GitHub Actions جلو کشیده شد. Queue، Admin Dashboard، API پویا و معماری worker مقیاس‌پذیر همچنان متعلق به v0.3 هستند.
+
+### 🔨 v0.3.0 — AI Pipeline
+- [ ] راه‌اندازی `packages/ai-pipeline` (Node worker + Queue)
+- [ ] تبدیل factory فعلی به LLM provider layer مقیاس‌پذیر (Gemini free-first؛ Claude/سایر providerها اختیاری) طبق پرامپت بخش ۹
+- [ ] تست A/B سه گزینه TTS بخش ۷.۱ و انتخاب نهایی
+- [ ] Admin Dashboard حداقلی برای مدیریت وضعیت خط تولید کتاب‌ها
+- [ ] مهاجرت از Static Export به Vercel/Next.js با API Routes پویا
+
+### 🔨 v0.4.0 — کاربر و اکانت
+- [ ] احراز هویت با OTP موبایل ایرانی
+- [ ] پروفایل، تاریخچه گوش‌دادن، بوکمارک
+- [ ] پایگاه‌داده Postgres (Supabase) + Prisma schema بخش ۸
+
+### 🔨 v0.5.0 — درآمدزایی
+- [ ] یکپارچه‌سازی Zarinpal/IDPay
+- [ ] منطق Freemium (۳ اپیزود رایگان/ماه) + صفحه اشتراک
+- [ ] پنل آنالیتیکس درآمد و Retention برای تیم
+
+### 🚀 v1.0.0 — Production Platform
+- [ ] حداقل ۵۰ کتاب منتشر شده با کیفیت یکنواخت
+- [ ] اپ موبایل (Capacitor یا React Native) در Cafe Bazaar/Myket
+- [ ] SEO کامل + محتوای رایگان تلگرام برای Growth
+- [ ] توصیه‌گر هوشمند + پلی‌لیست
+- [ ] SLA پایداری (Uptime > 99.5%)، مانیتورینگ کامل
+
+### 🔮 v2.0+ (چشم‌انداز بلندمدت)
+- چندزبانه‌سازی (دری/تاجیکی به‌عنوان لهجه‌های نزدیک، سپس زبان‌های دیگر)
+- پادکست‌های اختصاصی (Original content) فراتر از خلاصه کتاب
+- API عمومی برای توسعه‌دهندگان شخص ثالث
+
+---
+
+## ۱۴. متریک‌های موفقیت (KPIs) — برای ذهن فروش/کارآفرینی بنیان‌گذار
+
+| متریک | هدف v0.5 | هدف v1.0 |
+|---|---|---|
+| تعداد کتاب منتشرشده | ۱۵ | ۵۰+ |
+| کاربر فعال ماهانه (MAU) | ۵۰۰ | ۱۰,۰۰۰ |
+| نرخ تکمیل اپیزود (Completion Rate) | >۵۰٪ | >۶۵٪ |
+| نرخ تبدیل رایگان→پولی (Conversion) | — | >۳٪ |
+| Retention ماه دوم | — | >۳۰٪ |
+| CAC (هزینه جذب مشتری) | ردیابی شود | < LTV/۳ |
+
+---
+
+## ۱۵. ریسک‌ها و راهکار
+
+| ریسک | احتمال | راهکار |
+|---|---|---|
+| کیفیت پایین TTS فارسی | بالا | رویکرد هیبریدی صدای انسانی+AI (بخش ۷.۱) |
+| محدودیت دسترسی API از ایران | بالا | AI Pipeline روی سرور خارج از ایران |
+| شکایت کپی‌رایت ناشر | متوسط | پرامپت idea-only + لینک Affiliate به کتاب اصلی + Disclaimer (بخش ۷.۳) |
+| محدودیت درگاه پرداخت بین‌المللی | بالا (برای کاربر ایران) | Zarinpal/IDPay داخلی + Stripe فقط برای دیاسپورا |
+| رقابت از پلتفرم‌های بزرگ‌تر (طاقچه و...) | متوسط | تمرکز روی فرمت خاص (خلاصه صوتی کوتاه) که رقبا آن را ندارند |
+
+---
+
+## ۱۶. دستورالعمل برای هوش مصنوعی که این پروژه را ادامه می‌دهد
+
+اگر تو یک AI Agent هستی که این فایل را باز کرده‌ای تا کار را ادامه دهی:
+
+1. اول `README.md`، `AGENTS.md`/`CLAUDE.md` و بخش «۱۳. نقشه‌راه دقیق» همین فایل را بخوان تا بفهمی فاز فعلی پروژه کجاست (چک‌باکس‌های خالی = کار باقی‌مانده).
+2. هرگز معماری بخش ۶.۲ را بدون دلیل مستند تغییر نده؛ اگر تغییر لازم است، یک بخش «تغییرات معماری» به انتهای همین فایل اضافه کن، این فایل را جای‌گذاری نکن.
+3. برای هر ویژگی جدید، ابتدا مدل داده بخش ۸ را چک/به‌روزرسانی کن.
+4. هرگز پرامپت خلاصه‌سازی را طوری تغییر نده که متن کامل کتاب مستقیماً به مدل داده شود (بخش ۷.۳ و ۹ الزام حقوقی است، نه صرفاً پیشنهاد).
+5. بعد از هر تغییر معنادار، بخش «۱۳. نقشه‌راه دقیق» را به‌روزرسانی کن (چک‌باکس‌ها را بزن) تا Agent بعدی سردرگم نشود.
+6. در طراحی UI جدید همیشه RTL و موبایل‌فرست را اول تست کن.
+
+---
+
+## ۱۷. یادداشت بنیان‌گذار (Founder's Note)
+
+این سند نقطه شروع است، نه کتاب مقدس. زبدینو موفق می‌شود اگر:
+- کیفیت صدا و محتوا هرگز فدای سرعت نشود،
+- مدل حقوقی از روز اول تمیز باشد (چون این محصول مستقیماً روی خط قرمز کپی‌رایت راه می‌رود)،
+- و تیم روی TTS فارسی — که سخت‌ترین بخش فنی محصول است — سرمایه‌گذاری جدی کند.
+
+موفق باشیم. 🎧

@@ -12,12 +12,12 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Zobdino Project Operating Rules
 
-`KETABCAST_MASTER_DOC.md` is the product and engineering source of truth for this repository.
+`ZOBDINO_MASTER_DOC.md` is the product and engineering source of truth for this repository.
 
 Before making a meaningful change:
 
 1. Read `README.md`, `AGENTS.md` / `CLAUDE.md`.
-2. Read section **0. Executive Summary** and section **13. Roadmap** of `KETABCAST_MASTER_DOC.md`.
+2. Read section **0. Executive Summary** and section **13. Roadmap** of `ZOBDINO_MASTER_DOC.md`.
 3. Confirm the current roadmap phase before coding. The current phase after v0.1.0 is **v0.2.0 — Real Audio**.
 4. Preserve the architecture in section 6.2 unless an architecture change is explicitly documented in the Master Doc.
 5. Check/update the data model before features that change persisted product state.
@@ -37,7 +37,7 @@ Requirements:
 - Link the Pull Request to its Issue.
 - Run and publish validation evidence.
 - Never publish secrets, credentials, private source material, or unsanitized logs.
-- After every meaningful milestone, update the roadmap/checklist in `KETABCAST_MASTER_DOC.md`.
+- After every meaningful milestone, update the roadmap/checklist in `ZOBDINO_MASTER_DOC.md`.
 - A local-only result is not considered finished project progress until the sanitized evidence and release state are visible on GitHub.
 
 Do not edit or remove the Next.js-managed agent-rules block above; Next.js may regenerate it.

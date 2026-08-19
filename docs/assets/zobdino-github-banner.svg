@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">Zobdino</title>
+  <desc id="desc">AI-powered Persian book summaries and audio learning.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1020"/>
+      <stop offset="0.55" stop-color="#18122b"/>
+      <stop offset="1" stop-color="#25143f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#8b5cf6" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1280" height="640" rx="36" fill="url(#bg)"/>
+  <circle cx="1080" cy="120" r="310" fill="url(#glow)"/>
+  <circle cx="170" cy="560" r="240" fill="url(#glow)" opacity=".55"/>
+  <g transform="translate(105 105)">
+    <rect x="0" y="0" width="116" height="116" rx="30" fill="#8b5cf6"/>
+    <path d="M32 29h52c10 0 18 8 18 18v23c0 10-8 18-18 18H59L39 104V88h-7c-10 0-18-8-18-18V47c0-10 8-18 18-18Z" fill="#fff" opacity=".98"/>
+    <path d="M42 48h34M42 64h28" stroke="#8b5cf6" stroke-width="8" stroke-linecap="round"/>
+  </g>
+  <text x="105" y="315" fill="#ffffff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="92" font-weight="800" letter-spacing="-2">Zobdino</text>
+  <text x="108" y="380" fill="#c4b5fd" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="33" font-weight="600">Persian book summaries · Farsi audio learning</text>
+  <text x="108" y="438" fill="#cbd5e1" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="25">AI research → Persian script → TTS → audio QA → verifiable releases</text>
+  <g transform="translate(108 500)">
+    <rect width="250" height="58" rx="29" fill="#ffffff" fill-opacity=".08" stroke="#ffffff" stroke-opacity=".16"/>
+    <text x="125" y="38" text-anchor="middle" fill="#ffffff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="22" font-weight="700">zobdino.ir</text>
+  </g>
+</svg>
