@@ -5,7 +5,7 @@ const voices = [
     name: "Sulafat",
     tone: "Warm",
     description: "صدای گرم و آرام تأییدشده برای روایت فارسی زبدینو.",
-    src: "/KetabCast/audio/voice-preview/sulafat-warm-preview.mp3",
+    src: "/audio/voice-preview/sulafat-warm-preview.mp3",
   },
   {
     id: "schedar",
@@ -13,7 +13,7 @@ const voices = [
     name: "Schedar",
     tone: "Even",
     description: "صدای متعادل و یکنواخت تأییدشده برای روایت فارسی زبدینو.",
-    src: "/KetabCast/audio/voice-preview/schedar-even-preview.mp3",
+    src: "/audio/voice-preview/schedar-even-preview.mp3",
   },
 ] as const;
 
@@ -76,3 +76,4 @@ export default function VoicePreview() {
     </section>
   );
 }
+

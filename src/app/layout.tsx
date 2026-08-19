@@ -9,6 +9,10 @@ import PlayerProvider from "@/components/player/PlayerProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://zobdino.ir"),
+  alternates: {
+    canonical: "/",
+  },
   title: "زبدینو | خلاصه هوشمند کتاب با هوش مصنوعی",
   description:
     "زبدینو ایده‌های اصلی کتاب‌های ارزشمند را با خط تولید AI و Automation به خلاصه‌های فارسی شنیداری تبدیل می‌کند.",
@@ -38,3 +42,4 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     </html>
   );
 }
+
