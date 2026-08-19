@@ -81,10 +81,7 @@ function clampToDuration(seconds: number, duration: number) {
 }
 
 function inferBasePath() {
-  if (typeof window === "undefined") return "";
-  return window.location.pathname.startsWith("/KetabCast")
-    ? "/KetabCast"
-    : "";
+  return "";
 }
 
 export default function PlayerProvider({
@@ -695,3 +692,4 @@ export function usePlayer(): PlayerContextValue {
   }
   return value;
 }
+
