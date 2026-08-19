@@ -30,7 +30,7 @@ export default function VoicePreview() {
             id="approved-voice-preview-title"
             className="mt-2 text-2xl font-extrabold md:text-3xl"
           >
-            دو صدای تأییدشده برای نسخه جدید کتاب‌کست
+            دو صدای تأییدشده برای نسخه جدید زبدینو
           </h2>
           <p className="mt-3 text-sm leading-7 text-gray-400">
             این‌ها نمونه‌های کوتاه از دو صدایی هستند که برای روایت نهایی تأیید

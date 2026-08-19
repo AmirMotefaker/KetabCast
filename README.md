@@ -129,7 +129,7 @@ npm run dev
 سپس:
 
 ```text
-http://localhost:3000/KetabCast
+http://localhost:3000
 ```
 
 Validation کامل:
