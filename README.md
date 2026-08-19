@@ -1,20 +1,26 @@
 <div align="center">
 
-# زبدینو · Zobdino
+<img src="./docs/assets/zobdino-github-banner.svg" width="100%" alt="Zobdino — AI-powered Persian book summaries and audio learning" />
 
-### خلاصه‌ی هوشمند کتاب‌ها؛ از تحقیق تا انتشار، با خط تولید AI و Automation.
+# Zobdino · زبدینو
 
-[![Release](https://img.shields.io/github/v/release/AmirMotefaker/KetabCast?include_prereleases&label=release)](https://github.com/AmirMotefaker/KetabCast/releases)
-[![CI](https://github.com/AmirMotefaker/KetabCast/actions/workflows/ci.yml/badge.svg)](https://github.com/AmirMotefaker/KetabCast/actions/workflows/ci.yml)
-[![Pages](https://github.com/AmirMotefaker/KetabCast/actions/workflows/deploy.yml/badge.svg)](https://github.com/AmirMotefaker/KetabCast/actions/workflows/deploy.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Persian](https://img.shields.io/badge/language-Persian-7c3aed)](#)
-[![AI Pipeline](https://img.shields.io/badge/pipeline-AI%20%2B%20Automation-111827)](#)
+### خلاصه‌های هوشمند و شنیداری کتاب؛ فارسی، متن‌باز، قابل ممیزی.
 
-**[نسخه زنده](https://amirmotefaker.github.io/KetabCast/)** ·
-**[اپیزودها](https://amirmotefaker.github.io/KetabCast/books/)** ·
-**[Releaseها](https://github.com/AmirMotefaker/KetabCast/releases)** ·
-**[Master Doc](./KETABCAST_MASTER_DOC.md)**
+**Persian book summaries · Farsi audio learning · AI content pipeline · Persian TTS · Open Source**
+
+[Website](https://zobdino.ir/) ·
+[Books](https://zobdino.ir/books/) ·
+[Releases](../../releases) ·
+[Roadmap](./ZOBDINO_MASTER_DOC.md) ·
+[Contributing](./CONTRIBUTING.md) ·
+[Security](./SECURITY.md)
+
+![Next.js](https://img.shields.io/badge/Next.js-16-black)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6)
+![Persian](https://img.shields.io/badge/Language-Persian-7C3AED)
+![RTL](https://img.shields.io/badge/UX-RTL%20%2B%20Mobile--first-111827)
+![AI Pipeline](https://img.shields.io/badge/Pipeline-AI%20%2B%20Automation-6D28D9)
+![License](https://img.shields.io/badge/License-MIT-0F766E)
 
 </div>
 
@@ -22,117 +28,149 @@
 
 ## زبدینو چیست؟
 
-**زبدینو (Zobdino)** یک محصول فارسی‌زبان و متن‌باز برای ساخت و ارائه‌ی **خلاصه‌های شنیداری کتاب‌های غیرداستانی** است.
+**زبدینو (Zobdino)** یک پلتفرم فارسی‌زبان و متن‌باز برای **خلاصه‌سازی، روایت و شنیدن ایده‌های کلیدی کتاب‌های غیرداستانی** است.
 
-هدف محصول مشخص است: کاربر به‌جای چند ساعت مطالعه برای آشنایی اولیه با یک کتاب، بتواند در حدود ۱۰ تا ۱۸ دقیقه ایده‌های اصلی، نکات کاربردی و مسیر فکری کتاب را در قالب یک اپیزود فارسی منسجم بشنود.
+هدف ساده است: وقتی برای شناخت اولیه‌ی یک کتاب چند ساعت زمان ندارید، زبدینو یک اپیزود فارسی منسجم و شنیدنی در اختیار شما قرار می‌دهد تا ایده‌های اصلی، نکات کاربردی و مسیر فکری کتاب را سریع‌تر مرور کنید.
 
-تولید محتوا در زبدینو به‌صورت **AI-first و automation-first** طراحی شده است؛ از گردآوری منابع قانونی و ساخت source pack تا تولید اسکریپت فارسی، TTS، کنترل کیفیت صوت، نگهداری evidence و انتشار versioned روی GitHub.
+زبدینو فقط یک وب‌سایت خلاصه کتاب نیست. هسته‌ی پروژه یک **AI-first content and audio pipeline** است که research، source pack، Persian script، TTS، audio QA، evidence و انتشار versioned را به یک lifecycle قابل بررسی روی GitHub متصل می‌کند.
 
-> زبدینو جایگزین کتاب کامل نیست. هر اپیزود یک خلاصه و روایت مستقل از ایده‌های کتاب است و برای کشف، مرور و یادگیری سریع طراحی شده است.
+> زبدینو جایگزین کتاب کامل نیست. هر اپیزود یک روایت مستقل از ایده‌های عمومی و منابع مجاز پیرامون کتاب است.
 
-## وضعیت فعلی
+## What is Zobdino?
 
-**نسخه عمومی:** `v0.2.0-beta.5.1.10`
+**Zobdino** is an open-source platform for **Persian book summaries and Farsi audio learning**.
 
-| بخش | وضعیت |
+It turns legally sourced research into concise Persian scripts, synthesized narration, quality-checked production audio and verifiable release artifacts. The project is designed for readers and listeners who want a fast, structured introduction to high-value nonfiction books while keeping the underlying publishing process transparent and reproducible.
+
+Zobdino focuses on:
+
+- Persian / Farsi nonfiction book summaries
+- short-form audio learning
+- AI-assisted research and script generation
+- Persian text-to-speech and voice experimentation
+- reproducible audio QA
+- transparent GitHub-based evidence and releases
+
+## چرا زبدینو متفاوت است؟
+
+| اصل | در زبدینو |
 |---|---|
-| وب‌اپ فارسی RTL / Mobile-first | ✅ Live |
-| Next.js Static Export + GitHub Pages | ✅ Live |
-| پلیر صوتی با Seek / Progress / Speed / A11y | ✅ |
-| Atomic Habits — صوت واقعی | ✅ |
-| Deep Work — صوت واقعی | ✅ |
-| GitHub Release Assets + SHA-256 integrity | ✅ |
-| خط تولید research → script → audio → QA | ✅ |
-| صدای دوگانه Sulafat / Schedar | 🔧 Batch A به A1/A2 ایزوله شد؛ transient 429 از classifier outcome جداست و failed-generation checkpoint اضافه شد؛ هنوز ۰/۱۰ variant verified |
-| هدف MVP | **۵ از ۵ اپیزود با صوت production؛ Dual Voice مرحله بعد** |
-| دامنه `zobdino.ir` | ثبت شده؛ اتصال DNS/HTTPS در milestone جدا |
+| **Persian-first** | تجربه RTL، متن فارسی و کیفیت شنیداری فارسی از ابتدا جزو معماری محصول است |
+| **Audio-first** | پلیر، resume، queue، speed، sleep timer، bookmark، Media Session و transcript UX |
+| **Automation-first** | research → script → TTS → mastering → QA → release تا حد ممکن خودکار است |
+| **Verifiable** | hash، bytes، asset integrity، evidence و release lifecycle قابل بررسی هستند |
+| **Open Source** | معماری، CI/CD و مسیر توسعه روی GitHub قابل مشاهده است |
+| **Copyright-aware** | متن کامل کتاب بازنشر یا ترجمه‌ی فصل‌به‌فصل نمی‌شود |
 
-نسخه‌ی زنده فعلاً از GitHub Pages سرو می‌شود:
+## تجربه محصول
 
-**https://amirmotefaker.github.io/KetabCast/**
+زبدینو برای یک تجربه‌ی شنیداری سریع و کاربردی ساخته شده است:
 
-## خط تولید خودکار محتوا
+- خلاصه‌های فارسی کتاب‌های غیرداستانی
+- اپیزودهای کوتاه و قابل مصرف در رفت‌وآمد یا زمان‌های مرده
+- Global Mini Player
+- Seek / progress / playback speed
+- Resume listening
+- Queue و autoplay
+- Sleep timer
+- Bookmark و timestamp sharing
+- Media Session integration
+- Transcript search
+- RTL و mobile-first UX
+
+## خط تولید AI و Audio
 
 ```mermaid
 flowchart LR
-    A[منابع رسمی و قانونی] --> B[Research / Source Pack]
-    B --> C[AI Persian Script]
+    A[Official / Legal Sources] --> B[Research & Source Pack]
+    B --> C[Persian Summary Script]
     C --> D[Persian TTS]
     D --> E[FFmpeg Mastering]
-    E --> F[ASR / Audio QA]
+    E --> F[ASR + Audio QA]
     F --> G[Immutable Release Assets]
     G --> H[Metadata Promotion]
-    H --> I[GitHub Pages]
+    H --> I[GitHub Pages / zobdino.ir]
 ```
 
-اصل معماری این است که تولید یک اپیزود جدید تا حد ممکن reproducible و قابل ممیزی باشد. Evidence تحقیق، اسکریپت، QA و hash فایل صوتی همراه lifecycle پروژه نگهداری می‌شوند.
+هر مرحله باید قابل تکرار، قابل ممیزی و تا حد ممکن deterministic باشد. فایل صوتی production فقط پس از عبور از validation و integrity checks وارد metadata عمومی می‌شود.
 
-### مدل کنترل کیفیت
+## Quality & provenance
 
-زبدینو automation-first است، اما در نسخه بتا برای تغییر صدای production یک **Human Listening Gate** نیز داریم. این gate قرار نیست جای automation را بگیرد؛ فقط آخرین لایه‌ی کیفیت برای تلفظ، لحن و تجربه‌ی شنیداری فارسی است.
-
-## معماری انتشار صوت
-
-فایل‌های production داخل repository commit نمی‌شوند. MP3های تأییدشده در **GitHub Release Assets** قرار می‌گیرند و قبل از promotion این موارد بررسی می‌شوند:
+برای فایل‌های صوتی production این موارد بررسی می‌شوند:
 
 - SHA-256 فایل محلی
-- تعداد bytes
-- GitHub asset state
-- GitHub digest
-- دانلود عمومی مجدد
+- اندازه فایل
+- وضعیت GitHub Release Asset
+- digest asset
+- دانلود مجدد عمومی
 - SHA-256 فایل دانلودشده
 - HTTP Range support
+- episode metadata contract
+- text hygiene
+- production build
 
-نمونه‌ی release رسانه:
+تغییر صدای production نیز یک **Human Listening Gate** محدود دارد تا تلفظ، لحن و تجربه فارسی قربانی automation نشود.
 
-[`media-v0.2.0-beta.1`](https://github.com/AmirMotefaker/KetabCast/releases/tag/media-v0.2.0-beta.1)
+## وضعیت محصول
 
-## Tech Stack
+**Current code version:** `v0.2.0-beta.5.1.20`
 
-| لایه | فناوری |
+- ✅ Next.js static web app
+- ✅ Persian RTL / mobile-first interface
+- ✅ 5 production book episodes in the catalog
+- ✅ production audio stored as GitHub Release Assets
+- ✅ content factory validation
+- ✅ audio QA and integrity pipeline
+- ✅ GitHub Actions CI/CD
+- ✅ custom domain: `zobdino.ir`
+- 🔧 next-generation dual-voice production remains an active engineering milestone
+
+## Tech stack
+
+| Layer | Technology |
 |---|---|
-| Frontend | Next.js 16 · App Router · TypeScript |
+| Frontend | Next.js 16 · React 19 · TypeScript |
 | UI | Tailwind CSS v4 · Lucide React |
-| زبان/UX | Persian · RTL · Vazirmatn · Mobile-first |
-| AI Research/Script | Gemini + free-first fallbacks |
-| TTS | Gemini TTS review pipeline · Piper baseline |
+| UX | Persian · RTL · Mobile-first |
+| Content pipeline | Node.js automation |
+| AI research / scripting | Gemini + fallback strategy |
+| TTS | Gemini TTS review pipeline · Piper fallback |
 | Audio | FFmpeg |
-| QA | faster-whisper + custom validation |
+| ASR / QA | faster-whisper + custom validators |
 | CI/CD | GitHub Actions |
 | Hosting | GitHub Pages |
-| Audio Storage | GitHub Release Assets |
-| Source Control | GitHub |
+| Audio storage | GitHub Release Assets |
 
-## ساختار پروژه
+## Repository map
 
 ```text
 .
-├── .github/workflows/       # CI, Pages, content/voice automation
-├── content/                 # source packs, factory contracts, evidence
-├── data/audio/              # voice selection / pronunciation contracts
-├── docs/                    # engineering and release evidence
-├── scripts/                 # content factory, TTS, audio QA, promotion
+├── .github/workflows/       # CI, Pages and content/audio automation
+├── content/                 # research/source packs and evidence contracts
+├── data/audio/              # voice and pronunciation contracts
+├── docs/                    # engineering, release and brand documentation
+├── scripts/                 # content factory, TTS, QA and publishing tools
 ├── src/app/                 # Next.js routes
-├── src/components/          # UI + audio player
+├── src/components/          # UI and player
 ├── src/content/             # production episode metadata
-├── AGENTS.md                # agent execution rules
-└── KETABCAST_MASTER_DOC.md  # authoritative product/engineering source
+├── AGENTS.md                # repository execution rules
+└── ZOBDINO_MASTER_DOC.md    # product + engineering source of truth
 ```
 
-## اجرای محلی
+## Local development
 
 ```bash
 npm ci
 npm run dev
 ```
 
-سپس:
+Open:
 
 ```text
 http://localhost:3000
 ```
 
-Validation کامل:
+Full validation:
 
 ```bash
 npm run lint
@@ -143,84 +181,99 @@ npm run factory:validate
 npm run build
 ```
 
-## GitHub lifecycle
+## Engineering lifecycle
 
-هر milestone معنادار با lifecycle قابل مشاهده و قابل audit منتشر می‌شود:
+Every meaningful milestone follows an auditable lifecycle:
 
 ```text
 Issue
   ↓
-agent/* branch
+isolated branch / worktree
   ↓
-Commit
+implementation
+  ↓
+local validation
   ↓
 Pull Request
   ↓
-CI / Evidence
+GitHub CI
   ↓
-Merge
+exact-head merge
   ↓
-Exact-SHA annotated tag
+post-merge CI / Pages
   ↓
-GitHub Release
+evidence / release
 ```
 
-Local-only progress، milestone تمام‌شده محسوب نمی‌شود.
+Local-only progress is not considered a completed milestone.
 
-## Roadmap نزدیک
+## Roadmap
 
-- [x] Foundation و Static MVP
-- [x] پلیر صوتی واقعی
-- [x] AI content factory اولیه
-- [x] دو اپیزود production با GitHub Release Assets
-- [x] برند نهایی **Zobdino / زبدینو**
-- [x] انتخاب و اضافه‌شدن سه عنوان بعدی MVP به catalog و factory: Think Again، Zero to One، تیم ایدئال
-- [x] Next-Gen Listening: Global Mini Player، Resume، Queue/Autoplay، Sleep Timer، Bookmark، timestamp share، Media Session و Transcript Search (v0.2.0-beta.4)
-- [x] Factory batch ایمن `new-three` برای تولید و انتشار یک‌جای Think Again، Zero to One و تیم ایدئال بدون بازتولید دو صوت موجود (v0.2.0-beta.4.1)
-- [x] Promotion contract برای append کردن اپیزود جدید فقط پس از verification کامل asset (v0.2.0-beta.4.2)
-- [ ] اتصال `zobdino.ir` + HTTPS
-- [ ] Voice Review نهایی Sulafat / Schedar
-- [ ] promotion دقیق فایل‌های صوتی review‌شده
-- [ ] انتخاب و تولید ۳ عنوان بعدی برای رسیدن به 5/5
-- [ ] RSS / Podcast distribution
-- [ ] SEO / OpenGraph / sitemap hardening
+Near-term priorities:
 
-## درباره تغییر نام
+- [x] production web MVP
+- [x] real production audio
+- [x] 5-book MVP catalog
+- [x] reproducible content factory
+- [x] advanced listening UX
+- [x] Zobdino brand migration
+- [x] `zobdino.ir` custom-domain launch path
+- [ ] final GitHub organization + repository namespace cutover
+- [ ] production dual-voice promotion
+- [ ] RSS / podcast distribution
+- [ ] sitemap / structured SEO hardening
+- [ ] broader catalog expansion
 
-نسخه‌های اولیه‌ی پروژه با نام **KetabCast / کتاب‌کست** توسعه داده شدند. برند محصول از `v0.2.0-beta.2` به بعد **Zobdino / زبدینو** است.
+The authoritative roadmap is maintained in [`ZOBDINO_MASTER_DOC.md`](./ZOBDINO_MASTER_DOC.md).
 
-برای حفظ provenance:
+## Brand and canonical identity
 
-- نام repository فعلاً `AmirMotefaker/KetabCast` باقی می‌ماند.
-- releaseها و evidenceهای تاریخی rename نمی‌شوند.
-- transcript فایل‌های صوتی beta.1 دست‌کاری نمی‌شود، چون متن باید با صدای منتشرشده منطبق بماند.
-- migration کامل صوتی برند همراه Voice Review بعدی انجام می‌شود.
+Canonical product name:
 
-## حقوق محتوا
+**Zobdino · زبدینو**
 
-زبدینو برای کتاب‌های دارای کپی‌رایت، متن کامل کتاب را بازنشر یا ترجمه‌ی فصل‌به‌فصل نمی‌کند.
+Canonical web domain:
 
-Pipeline بر منابع قانونی/رسمی، metadata عمومی و source packهای مجاز تکیه می‌کند و خروجی یک روایت مستقل فارسی از ایده‌های اصلی کتاب است.
+**https://zobdino.ir/**
 
-## مشارکت
+The project was originally developed under the name **KetabCast / کتاب‌کست**. Historical release assets, evidence and published transcript provenance may retain that original repository identity intentionally.
 
-پروژه Open Source است. قبل از تغییرات معنادار:
+Active branding follows [`docs/BRAND.md`](./docs/BRAND.md).
 
-1. [`KETABCAST_MASTER_DOC.md`](./KETABCAST_MASTER_DOC.md) را بخوانید.
-2. [`AGENTS.md`](./AGENTS.md) را رعایت کنید.
-3. تغییر را به Issue مرتبط کنید.
-4. PR و evidence قابل بررسی ارائه دهید.
+## Legal approach
+
+For copyrighted books, Zobdino does **not** republish the full book and does not provide chapter-by-chapter translation.
+
+The content pipeline is designed around legal/official sources, public metadata and permitted source packs. Published episodes are independent Persian summaries and commentary intended for discovery, review and learning.
+
+## Open source & contribution
+
+Contributions are welcome.
+
+Before making a meaningful change:
+
+1. Read [`ZOBDINO_MASTER_DOC.md`](./ZOBDINO_MASTER_DOC.md).
+2. Follow [`AGENTS.md`](./AGENTS.md).
+3. Read [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+4. Link the change to an Issue.
+5. Provide reproducible validation evidence.
+
+Security reports should follow [`SECURITY.md`](./SECURITY.md).
 
 ## License
 
-MIT
+The software in this repository is released under the [MIT License](./LICENSE).
+
+Content, third-party book references, cover art and media may have separate rights and must be reviewed independently.
 
 ---
 
 <div align="center">
 
-**Zobdino · زبدینو**
+### Zobdino · زبدینو
 
-خلاصه‌ی هوشمند کتاب‌ها، آماده برای شنیدن.
+**Read less to discover more. Listen in Persian.**
+
+https://zobdino.ir/
 
 </div>
