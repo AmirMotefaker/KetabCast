@@ -8,9 +8,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
-<!-- BEGIN:ketabcast-project-rules -->
+<!-- BEGIN:zobdino-project-rules -->
 
-# KetabCast Project Operating Rules
+# Zobdino Project Operating Rules
 
 `KETABCAST_MASTER_DOC.md` is the product and engineering source of truth for this repository.
 
@@ -42,4 +42,4 @@ Requirements:
 
 Do not edit or remove the Next.js-managed agent-rules block above; Next.js may regenerate it.
 
-<!-- END:ketabcast-project-rules -->
+<!-- END:zobdino-project-rules -->
