@@ -352,7 +352,13 @@ Next.js App Router, TS, Tailwind v4, تم تاریک/بنفش, RTL/وزیرمت�
 > تصمیم ۲۰۲۶-۰۸-۱۰: برای سرعت v0.2، یک Content Factory بدون backend و مبتنی بر GitHub Actions جلو کشیده شد. Queue، Admin Dashboard، API پویا و معماری worker مقیاس‌پذیر همچنان متعلق به v0.3 هستند.
 
 ### 🔨 v0.3.0 — AI Pipeline
-- [ ] راه‌اندازی `packages/ai-pipeline` (Node worker + Queue)
+- [x] قرارداد پایه `packages/ai-pipeline`: فرمت‌ها، Full/Summary/Both، حقوق/DRM، مسیر استخراج و lifecycle پردازش (#100)
+- [ ] تکمیل `packages/ai-pipeline` با extractorهای واقعی، Node worker و Queue
+- [ ] ورودی P0: PDF متنی/اسکن‌شده، EPUB، DOCX، TXT/Markdown/HTML
+- [ ] ورودی P1: AZW3/MOBI بدون DRM و CBZ/CBR با OCR و reading order
+- [ ] ورودی P2 آزمایشی: KFX بدون DRM و best-effort
+- [ ] خروجی خصوصی Full narration، Summary podcast یا Both با حذف/retention قابل کنترل
+- [ ] لایه صوتی مشترک آوایار/زبدینو با Sulafat و Iapetus (#101)
 - [ ] تبدیل factory فعلی به LLM provider layer مقیاس‌پذیر (Gemini free-first؛ Claude/سایر providerها اختیاری) طبق پرامپت بخش ۹
 - [ ] تست A/B سه گزینه TTS بخش ۷.۱ و انتخاب نهایی
 - [ ] Admin Dashboard حداقلی برای مدیریت وضعیت خط تولید کتاب‌ها
