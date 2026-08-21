@@ -33,6 +33,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install PDF extraction runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils
+
       - name: Lint
         run: npm run lint
 
@@ -47,6 +52,9 @@ jobs:
 
       - name: Factory configuration
         run: npm run factory:validate
+
+      - name: P0 extractor contracts
+        run: npm run pipeline:extractors:validate
 
       - name: Dual-voice resume contracts
         run: npm run voice:dual:resume:validate
