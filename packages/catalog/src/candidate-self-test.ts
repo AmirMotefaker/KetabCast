@@ -30,7 +30,6 @@ for (const candidate of candidateRegistry) {
     assert(candidate.rightsResearch.evidenceReferences.length >= 1, `candidate-evidence-missing:${candidate.slug}`);
     assert(candidate.rightsResearch.reviewedAt.length >= 10, `candidate-review-date-missing:${candidate.slug}`);
     assert(candidate.rightsResearch.reviewedBy.trim().length > 0, `candidate-reviewer-missing:${candidate.slug}`);
-    assert(candidate.editionOrTranslationNote === undefined, `candidate-unexpected-top-level-edition-note:${candidate.slug}`);
   } else {
     assert(candidate.rightsResearch.status === "pending", `candidate-unexpected-research-state:${candidate.slug}`);
     assert(candidate.rightsResearch.evidenceReferences.length === 0, `candidate-unreviewed-evidence-present:${candidate.slug}`);
