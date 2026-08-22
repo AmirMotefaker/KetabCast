@@ -50,6 +50,9 @@ jobs:
       - name: Episode contract
         run: npm run check:episodes
 
+      - name: Catalog rights and taxonomy gate
+        run: npm run catalog:validate
+
       - name: Factory configuration
         run: npm run factory:validate
 
