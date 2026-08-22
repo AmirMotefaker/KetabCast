@@ -11,10 +11,13 @@ export interface VoiceServiceOptions {
 }
 
 export class VoiceService {
-  constructor(
-    private readonly provider: VoiceProvider,
-    private readonly options: VoiceServiceOptions = {},
-  ) {}
+  private readonly provider: VoiceProvider;
+  private readonly options: VoiceServiceOptions;
+
+  constructor(provider: VoiceProvider, options: VoiceServiceOptions = {}) {
+    this.provider = provider;
+    this.options = options;
+  }
 
   async narrate(request: VoiceRequest): Promise<VoiceResult> {
     validateVoiceRequest(request);
