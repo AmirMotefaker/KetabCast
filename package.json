@@ -23,6 +23,7 @@
     "pipeline:golden:validate": "node --experimental-strip-types packages/ai-pipeline/src/golden/self-test.ts",
     "pipeline:golden:dry-run:validate": "node --experimental-strip-types packages/ai-pipeline/src/golden/dry-run-self-test.ts",
     "pipeline:golden:dual-voice:validate": "node --experimental-strip-types packages/ai-pipeline/src/golden/dual-voice-offline-self-test.ts",
+    "pipeline:golden:live-probe:validate": "node --experimental-strip-types packages/ai-pipeline/src/golden/live-tts-probe-self-test.ts",
     "pipeline:voice:validate": "node --experimental-strip-types packages/ai-pipeline/src/voice/self-test.ts",
     "pipeline:voice:gemini:validate": "node --experimental-strip-types packages/ai-pipeline/src/voice/gemini-self-test.ts",
     "audio:github-release": "node scripts/github-release-audio.mjs",
