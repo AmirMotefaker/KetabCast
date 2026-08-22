@@ -26,16 +26,10 @@ for (const candidate of candidateRegistry) {
   assert(candidate.rationale.trim().length >= 20, `candidate-rationale-too-short:${candidate.slug}`);
   assert(candidate.sourceLanguage.trim().length > 0, `candidate-source-language-empty:${candidate.slug}`);
 
-  if (candidate.rightsResearch.status === "evidence-found") {
-    assert(candidate.rightsResearch.evidenceReferences.length >= 1, `candidate-evidence-missing:${candidate.slug}`);
-    assert(candidate.rightsResearch.reviewedAt.length >= 10, `candidate-review-date-missing:${candidate.slug}`);
-    assert(candidate.rightsResearch.reviewedBy.trim().length > 0, `candidate-reviewer-missing:${candidate.slug}`);
-  } else {
-    assert(candidate.rightsResearch.status === "pending", `candidate-unexpected-research-state:${candidate.slug}`);
-    assert(candidate.rightsResearch.evidenceReferences.length === 0, `candidate-unreviewed-evidence-present:${candidate.slug}`);
-    assert(candidate.rightsResearch.reviewedAt === "", `candidate-unreviewed-date-present:${candidate.slug}`);
-    assert(candidate.rightsResearch.reviewedBy === "", `candidate-unreviewed-reviewer-present:${candidate.slug}`);
-  }
+  assert(candidate.rightsResearch.status === "evidence-found", `candidate-research-incomplete:${candidate.slug}`);
+  assert(candidate.rightsResearch.evidenceReferences.length >= 1, `candidate-evidence-missing:${candidate.slug}`);
+  assert(candidate.rightsResearch.reviewedAt.length >= 10, `candidate-review-date-missing:${candidate.slug}`);
+  assert(candidate.rightsResearch.reviewedBy.trim().length > 0, `candidate-reviewer-missing:${candidate.slug}`);
 
   for (const collection of candidate.primaryCollections) {
     assert(PRIMARY_COLLECTIONS.includes(collection), `candidate-collection-invalid:${candidate.slug}:${collection}`);
@@ -53,10 +47,14 @@ const p1Candidates = candidateRegistry.filter((candidate) => candidate.priority 
 assert(p1Candidates.length === 9, `candidate-p1-pool-unexpected:${p1Candidates.length}`);
 assert(p1Candidates.every((candidate) => candidate.rightsResearch.status === "evidence-found"), "candidate-p1-research-incomplete");
 
+const p2Candidates = candidateRegistry.filter((candidate) => candidate.priority === "p2");
+assert(p2Candidates.length === 8, `candidate-p2-pool-unexpected:${p2Candidates.length}`);
+assert(p2Candidates.every((candidate) => candidate.rightsResearch.status === "evidence-found"), "candidate-p2-research-incomplete");
+
 const evidenceFoundCount = candidateRegistry.filter((candidate) => candidate.rightsResearch.status === "evidence-found").length;
-assert(evidenceFoundCount === 17, `candidate-batch-ab-evidence-count-invalid:${evidenceFoundCount}`);
+assert(evidenceFoundCount === 25, `candidate-all-evidence-count-invalid:${evidenceFoundCount}`);
 
 const clearedCount = candidateRegistry.filter((candidate) => candidate.rightsResearch.status === "cleared").length;
 assert(clearedCount === 0, `candidate-cleared-count-invalid:${clearedCount}`);
 
-console.log(`25-book candidate registry OK: ${candidateRegistry.length} candidates, ${coveredCollections.size} collections, ${evidenceFoundCount} evidence-backed P0/P1 candidates; none cleared.`);
+console.log(`25-book candidate registry OK: ${candidateRegistry.length} candidates, ${coveredCollections.size} collections, all ${evidenceFoundCount} evidence-backed; none cleared.`);
