@@ -37,6 +37,18 @@ export interface VoiceProvider {
   synthesize(request: VoiceRequest): Promise<VoiceResult>;
 }
 
+export class VoiceProviderError extends Error {
+  readonly retryable: boolean;
+  readonly status?: number;
+
+  constructor(code: string, options: { retryable: boolean; status?: number; cause?: unknown }) {
+    super(code, { cause: options.cause });
+    this.name = "VoiceProviderError";
+    this.retryable = options.retryable;
+    this.status = options.status;
+  }
+}
+
 export const AVAYAR_VOICE_MAP: Readonly<Record<VoiceId, string>> = {
   sulafat: "Sulafat",
   iapetus: "Iapetus",
