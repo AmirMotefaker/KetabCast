@@ -1,0 +1,43 @@
+import { PRIMARY_COLLECTIONS } from "./contracts.ts";
+import { candidateRegistry } from "./candidate-registry.ts";
+
+function assert(condition: unknown, message: string): asserts condition {
+  if (!condition) throw new Error(message);
+}
+
+assert(candidateRegistry.length === 25, `candidate-count-invalid:${candidateRegistry.length}`);
+
+const slugs = new Set<string>();
+const coveredCollections = new Set<string>();
+
+for (const candidate of candidateRegistry) {
+  assert(candidate.slug.trim().length > 0, "candidate-slug-empty");
+  assert(!slugs.has(candidate.slug), `candidate-slug-duplicate:${candidate.slug}`);
+  slugs.add(candidate.slug);
+
+  assert(candidate.title.trim().length > 0, `candidate-title-empty:${candidate.slug}`);
+  assert(candidate.author.trim().length > 0, `candidate-author-empty:${candidate.slug}`);
+  assert(candidate.publicationState === "candidate", `candidate-publication-state-invalid:${candidate.slug}`);
+  assert(candidate.rightsResearch.status !== "cleared", `candidate-cleared-without-review:${candidate.slug}`);
+  assert(candidate.rightsResearch.evidenceReferences.length === 0, `candidate-unreviewed-evidence-present:${candidate.slug}`);
+  assert(candidate.rightsResearch.reviewedAt === "", `candidate-unreviewed-date-present:${candidate.slug}`);
+  assert(candidate.rightsResearch.reviewedBy === "", `candidate-unreviewed-reviewer-present:${candidate.slug}`);
+  assert(candidate.rightsResearch.originalWorkNote.trim().length > 0, `candidate-original-rights-note-empty:${candidate.slug}`);
+  assert(candidate.rightsResearch.editionOrTranslationNote.trim().length > 0, `candidate-edition-rights-note-empty:${candidate.slug}`);
+  assert(candidate.primaryCollections.length >= 1, `candidate-collections-empty:${candidate.slug}`);
+  assert(candidate.topics.length >= 2, `candidate-topics-insufficient:${candidate.slug}`);
+  assert(candidate.rationale.trim().length >= 20, `candidate-rationale-too-short:${candidate.slug}`);
+  assert(candidate.sourceLanguage.trim().length > 0, `candidate-source-language-empty:${candidate.slug}`);
+
+  for (const collection of candidate.primaryCollections) {
+    assert(PRIMARY_COLLECTIONS.includes(collection), `candidate-collection-invalid:${candidate.slug}:${collection}`);
+    coveredCollections.add(collection);
+  }
+}
+
+assert(coveredCollections.size >= 7, `candidate-collection-coverage-insufficient:${coveredCollections.size}`);
+
+const p0Count = candidateRegistry.filter((candidate) => candidate.priority === "p0").length;
+assert(p0Count >= 6, `candidate-p0-pool-too-small:${p0Count}`);
+
+console.log(`25-book candidate registry OK: ${candidateRegistry.length} candidates, ${coveredCollections.size} collections, ${p0Count} P0.`);
