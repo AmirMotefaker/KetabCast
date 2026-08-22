@@ -42,10 +42,9 @@ export class GeminiVoiceProvider implements VoiceProvider {
 
   async synthesize(request: VoiceRequest): Promise<VoiceResult> {
     const providerVoice = AVAYAR_VOICE_MAP[request.voiceId];
-    const prompt = buildIranianPersianDirectorPrompt(request);
     const body = {
       model: this.model,
-      input: prompt,
+      input: buildIranianPersianDirectorPrompt(request),
       response_format: { type: "audio" },
       generation_config: { speech_config: [{ voice: providerVoice }] },
     };
@@ -83,17 +82,16 @@ export class GeminiVoiceProvider implements VoiceProvider {
     const audio = findAudio(parsed);
     if (!audio) throw new VoiceProviderError("gemini-audio-missing", { retryable: false });
 
-    const bytes = Uint8Array.from(Buffer.from(audio.data, "base64"));
-    if (bytes.byteLength < 44) throw new VoiceProviderError("gemini-audio-too-small", { retryable: false });
+    const providerBytes = Uint8Array.from(Buffer.from(audio.data, "base64"));
+    if (providerBytes.byteLength === 0) throw new VoiceProviderError("gemini-audio-empty", { retryable: false });
 
-    const mimeType = normalizeMimeType(audio.mimeType);
-    const durationMs = mimeType === "audio/wav" ? wavDurationMs(bytes) : estimatePcmDurationMs(bytes, audio.sampleRate, audio.channels);
-    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    const normalized = normalizeAudio(providerBytes, audio.mimeType, audio.sampleRate, audio.channels);
+    const sha256 = createHash("sha256").update(normalized.bytes).digest("hex");
 
     return {
-      audio: bytes,
-      mimeType,
-      durationMs,
+      audio: normalized.bytes,
+      mimeType: normalized.mimeType,
+      durationMs: normalized.durationMs,
       sha256,
       provenance: {
         provider: this.id,
@@ -135,11 +133,7 @@ export function buildIranianPersianDirectorPrompt(request: VoiceRequest): string
 
 class FetchGeminiVoiceTransport implements GeminiVoiceTransport {
   async send(input: { url: string; apiKey: string; body: unknown; headers: Record<string, string> }): Promise<{ status: number; text: string }> {
-    const response = await fetch(input.url, {
-      method: "POST",
-      headers: input.headers,
-      body: JSON.stringify(input.body),
-    });
+    const response = await fetch(input.url, { method: "POST", headers: input.headers, body: JSON.stringify(input.body) });
     return { status: response.status, text: await response.text() };
   }
 }
@@ -175,29 +169,49 @@ function findAudio(value: unknown): FoundAudio | null {
   return null;
 }
 
-function normalizeMimeType(value: string): "audio/mpeg" | "audio/wav" {
-  const mime = value.toLowerCase();
-  if (mime === "audio/wav" || mime === "audio/x-wav") return "audio/wav";
-  if (mime === "audio/mpeg" || mime === "audio/mp3") return "audio/mpeg";
-  if (mime === "audio/pcm" || mime === "audio/l16" || !mime) return "audio/wav";
+function normalizeAudio(bytes: Uint8Array, mimeType: string, sampleRate: number, channels: number): { bytes: Uint8Array; mimeType: "audio/mpeg" | "audio/wav"; durationMs: number } {
+  const mime = mimeType.toLowerCase();
+  if (mime === "audio/wav" || mime === "audio/x-wav") return { bytes, mimeType: "audio/wav", durationMs: wavDurationMs(bytes) };
+  if (mime === "audio/mpeg" || mime === "audio/mp3") {
+    throw new VoiceProviderError("gemini-mp3-duration-requires-normalizer", { retryable: false });
+  }
+  if (mime === "audio/pcm" || mime === "audio/l16" || !mime) {
+    const wav = wrapPcm16AsWav(bytes, sampleRate, channels);
+    return { bytes: wav, mimeType: "audio/wav", durationMs: wavDurationMs(wav) };
+  }
   throw new VoiceProviderError("gemini-audio-type-unsupported", { retryable: false });
+}
+
+export function wrapPcm16AsWav(pcm: Uint8Array, sampleRate: number, channels: number): Uint8Array {
+  if (!Number.isInteger(sampleRate) || sampleRate <= 0 || !Number.isInteger(channels) || channels < 1 || channels > 2) {
+    throw new VoiceProviderError("pcm-metadata-invalid", { retryable: false });
+  }
+  const output = new Uint8Array(44 + pcm.byteLength);
+  const view = new DataView(output.buffer);
+  output.set(Buffer.from("RIFF"), 0);
+  view.setUint32(4, 36 + pcm.byteLength, true);
+  output.set(Buffer.from("WAVEfmt "), 8);
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * channels * 2, true);
+  view.setUint16(32, channels * 2, true);
+  view.setUint16(34, 16, true);
+  output.set(Buffer.from("data"), 36);
+  view.setUint32(40, pcm.byteLength, true);
+  output.set(pcm, 44);
+  return output;
 }
 
 function wavDurationMs(bytes: Uint8Array): number {
   if (bytes.byteLength < 44) throw new VoiceProviderError("wav-header-invalid", { retryable: false });
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const riff = Buffer.from(bytes.subarray(0, 4)).toString("ascii");
-  const wave = Buffer.from(bytes.subarray(8, 12)).toString("ascii");
-  if (riff !== "RIFF" || wave !== "WAVE") throw new VoiceProviderError("wav-header-invalid", { retryable: false });
+  if (Buffer.from(bytes.subarray(0, 4)).toString("ascii") !== "RIFF" || Buffer.from(bytes.subarray(8, 12)).toString("ascii") !== "WAVE") {
+    throw new VoiceProviderError("wav-header-invalid", { retryable: false });
+  }
   const byteRate = view.getUint32(28, true);
   const dataBytes = view.getUint32(40, true);
   if (!byteRate || !dataBytes) throw new VoiceProviderError("wav-duration-invalid", { retryable: false });
   return Math.round((dataBytes / byteRate) * 1000);
-}
-
-function estimatePcmDurationMs(bytes: Uint8Array, sampleRate: number, channels: number): number {
-  if (!Number.isFinite(sampleRate) || sampleRate <= 0 || !Number.isFinite(channels) || channels <= 0) {
-    throw new VoiceProviderError("pcm-metadata-invalid", { retryable: false });
-  }
-  return Math.max(1, Math.round((bytes.byteLength / (sampleRate * channels * 2)) * 1000));
 }
