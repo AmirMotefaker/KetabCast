@@ -62,6 +62,9 @@ jobs:
       - name: P0 extractor contracts
         run: npm run pipeline:extractors:validate
 
+      - name: Golden Pipeline v1 contract
+        run: npm run pipeline:golden:validate
+
       - name: Shared Persian voice contract
         run: npm run pipeline:voice:validate
 
