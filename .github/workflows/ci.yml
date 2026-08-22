@@ -56,6 +56,9 @@ jobs:
       - name: P0 extractor contracts
         run: npm run pipeline:extractors:validate
 
+      - name: Shared Persian voice contract
+        run: npm run pipeline:voice:validate
+
       - name: Dual-voice resume contracts
         run: npm run voice:dual:resume:validate
 
