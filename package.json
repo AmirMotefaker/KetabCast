@@ -18,6 +18,7 @@
     "factory:script": "node scripts/content-factory.mjs --stage script --slug all --out .factory-output",
     "pipeline:validate": "node --experimental-strip-types packages/ai-pipeline/src/self-test.ts",
     "pipeline:extractors:validate": "node --experimental-strip-types packages/ai-pipeline/src/extractors/self-test.ts",
+    "pipeline:voice:validate": "node --experimental-strip-types packages/ai-pipeline/src/voice/self-test.ts",
     "audio:github-release": "node scripts/github-release-audio.mjs",
     "voice:lab:validate": "node scripts/voice-lab.mjs --mode validate",
     "voice:selected:validate": "node scripts/selected-voice-render.mjs --mode validate",
