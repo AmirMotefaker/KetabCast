@@ -65,6 +65,9 @@ jobs:
       - name: Golden Pipeline v1 contract
         run: npm run pipeline:golden:validate
 
+      - name: Golden Pipeline v2 dry run
+        run: npm run pipeline:golden:dry-run:validate
+
       - name: Shared Persian voice contract
         run: npm run pipeline:voice:validate
 
