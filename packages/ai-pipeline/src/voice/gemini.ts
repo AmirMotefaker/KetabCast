@@ -7,7 +7,7 @@ import {
   type VoiceResult,
 } from "./contracts.ts";
 
-export const GEMINI_VOICE_ADAPTER_VERSION = "2026-08-22.1";
+export const GEMINI_VOICE_ADAPTER_VERSION = "2026-08-22.2";
 export const DEFAULT_GEMINI_TTS_MODEL = "gemini-3.1-flash-tts-preview";
 const API_REVISION = "2026-05-20";
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions";
@@ -170,16 +170,31 @@ function findAudio(value: unknown): FoundAudio | null {
 }
 
 function normalizeAudio(bytes: Uint8Array, mimeType: string, sampleRate: number, channels: number): { bytes: Uint8Array; mimeType: "audio/mpeg" | "audio/wav"; durationMs: number } {
-  const mime = mimeType.toLowerCase();
-  if (mime === "audio/wav" || mime === "audio/x-wav") return { bytes, mimeType: "audio/wav", durationMs: wavDurationMs(bytes) };
-  if (mime === "audio/mpeg" || mime === "audio/mp3") {
+  const { baseType, parameters } = parseAudioMimeType(mimeType);
+  if (baseType === "audio/wav" || baseType === "audio/x-wav") return { bytes, mimeType: "audio/wav", durationMs: wavDurationMs(bytes) };
+  if (baseType === "audio/mpeg" || baseType === "audio/mp3") {
     throw new VoiceProviderError("gemini-mp3-duration-requires-normalizer", { retryable: false });
   }
-  if (mime === "audio/pcm" || mime === "audio/l16" || !mime) {
-    const wav = wrapPcm16AsWav(bytes, sampleRate, channels);
+  if (baseType === "audio/pcm" || baseType === "audio/l16" || !baseType) {
+    const rateFromMime = Number(parameters.get("rate") ?? parameters.get("samplerate") ?? parameters.get("sample-rate"));
+    const effectiveSampleRate = Number.isFinite(rateFromMime) && rateFromMime > 0 ? rateFromMime : sampleRate;
+    const wav = wrapPcm16AsWav(bytes, effectiveSampleRate, channels);
     return { bytes: wav, mimeType: "audio/wav", durationMs: wavDurationMs(wav) };
   }
   throw new VoiceProviderError("gemini-audio-type-unsupported", { retryable: false });
+}
+
+function parseAudioMimeType(mimeType: string): { baseType: string; parameters: Map<string, string> } {
+  const [rawBaseType = "", ...rawParameters] = mimeType.split(";");
+  const parameters = new Map<string, string>();
+  for (const rawParameter of rawParameters) {
+    const separator = rawParameter.indexOf("=");
+    if (separator === -1) continue;
+    const key = rawParameter.slice(0, separator).trim().toLowerCase();
+    const value = rawParameter.slice(separator + 1).trim().replace(/^"|"$/g, "");
+    if (key && value) parameters.set(key, value);
+  }
+  return { baseType: rawBaseType.trim().toLowerCase(), parameters };
 }
 
 export function wrapPcm16AsWav(pcm: Uint8Array, sampleRate: number, channels: number): Uint8Array {
