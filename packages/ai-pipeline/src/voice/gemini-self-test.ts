@@ -36,6 +36,31 @@ for (const [voiceId, providerVoice] of [["sulafat", "Sulafat"], ["iapetus", "Iap
   assert.match(body.input, /این یک متن کوتاه فارسی/);
 }
 
+const parameterizedPcm = new Uint8Array(24000 * 2 / 10);
+const parameterizedTransport: GeminiVoiceTransport = {
+  async send() {
+    return {
+      status: 200,
+      text: JSON.stringify({
+        output_audio: {
+          type: "audio",
+          mime_type: "audio/L16;rate=24000",
+          channels: 1,
+          data: Buffer.from(parameterizedPcm).toString("base64"),
+        },
+      }),
+    };
+  },
+};
+const parameterizedResult = await new VoiceService(
+  new GeminiVoiceProvider({ apiKey: "offline-test-key", transport: parameterizedTransport }),
+  { maxAttempts: 1 },
+).narrate({ text: goldenText, voiceId: "sulafat", mode: "summary", chapterId: "parameterized-l16", language: "fa-IR" });
+assert.equal(parameterizedResult.mimeType, "audio/wav");
+assert.ok(parameterizedResult.durationMs >= 90 && parameterizedResult.durationMs <= 110);
+assert.equal(Buffer.from(parameterizedResult.audio.subarray(0, 4)).toString("ascii"), "RIFF");
+assert.equal(Buffer.from(parameterizedResult.audio.subarray(8, 12)).toString("ascii"), "WAVE");
+
 let attempts = 0;
 const retryTransport: GeminiVoiceTransport = {
   async send() {
@@ -58,4 +83,4 @@ await assert.rejects(
 );
 assert.equal(terminalAttempts, 1);
 
-console.log("Zobdino Gemini voice adapter: Sulafat/Iapetus payload, playable WAV normalization, retry classification and checksum path validated.");
+console.log("Zobdino Gemini voice adapter: Sulafat/Iapetus payload, parameterized L16 MIME, playable WAV normalization, retry classification and checksum path validated.");
