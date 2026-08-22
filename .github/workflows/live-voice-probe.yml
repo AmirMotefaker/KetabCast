@@ -1,4 +1,4 @@
-name: Zobdino Live Persian Voice Probe
+name: Zobdino Golden Live TTS Probe
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 10
     env:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      VOICE_PROBE_OUT: .voice-live-probe
+      GOLDEN_LIVE_PROBE_OUT: .golden-live-tts-probe
 
     steps:
       - name: Checkout
@@ -27,6 +27,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate Golden Pipeline v4 contract
+        run: npm run pipeline:golden:live-probe:validate
+
       - name: Validate secret presence
         shell: bash
         run: |
@@ -36,15 +39,15 @@ jobs:
             exit 1
           }
 
-      - name: Run Sulafat and Iapetus live probe
-        run: node --experimental-strip-types scripts/live-gemini-voice-probe.mjs
+      - name: Run controlled Sulafat and Iapetus probe
+        run: node --experimental-strip-types scripts/golden-live-tts-probe.mjs
 
-      - name: Upload private probe evidence
+      - name: Upload non-public probe evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: zobdino-live-voice-probe-${{ github.run_id }}
-          path: .voice-live-probe
+          name: zobdino-golden-live-tts-probe-${{ github.run_id }}
+          path: .golden-live-tts-probe
           if-no-files-found: ignore
           retention-days: 3
           include-hidden-files: true
