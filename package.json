@@ -14,6 +14,7 @@
     "audio:upload": "node scripts/audio-upload.mjs",
     "check:episodes": "node scripts/validate-episodes.mjs",
     "catalog:validate": "node --experimental-strip-types packages/catalog/src/self-test.ts",
+    "catalog:candidates:validate": "node --experimental-strip-types packages/catalog/src/candidate-self-test.ts",
     "factory:validate": "node scripts/content-factory.mjs --stage validate --slug all",
     "factory:research": "node scripts/content-factory.mjs --stage research --slug all --out .factory-output",
     "factory:script": "node scripts/content-factory.mjs --stage script --slug all --out .factory-output",
