@@ -53,6 +53,9 @@ jobs:
       - name: Catalog rights and taxonomy gate
         run: npm run catalog:validate
 
+      - name: 25-book candidate registry
+        run: npm run catalog:candidates:validate
+
       - name: Factory configuration
         run: npm run factory:validate
 
