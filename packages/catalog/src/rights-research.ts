@@ -1,6 +1,7 @@
 import type { CandidateRightsResearch, CatalogCandidate } from "./candidate-registry.ts";
 import { candidateRegistry as baseCandidateRegistry } from "./candidate-registry.ts";
 import { batchBRightsResearch } from "./rights-research-batch-b.ts";
+import { batchCRightsResearch } from "./rights-research-batch-c.ts";
 
 const REVIEWED_AT = "2026-08-22";
 const REVIEWED_BY = "zobdino-rights-research-batch-a";
@@ -63,5 +64,5 @@ export const batchARightsResearch: Record<string, CandidateRightsResearch> = {
 
 export const researchedCandidateRegistry: CatalogCandidate[] = baseCandidateRegistry.map((candidate) => ({
   ...candidate,
-  rightsResearch: batchBRightsResearch[candidate.slug] ?? batchARightsResearch[candidate.slug] ?? candidate.rightsResearch,
+  rightsResearch: batchCRightsResearch[candidate.slug] ?? batchBRightsResearch[candidate.slug] ?? batchARightsResearch[candidate.slug] ?? candidate.rightsResearch,
 }));
