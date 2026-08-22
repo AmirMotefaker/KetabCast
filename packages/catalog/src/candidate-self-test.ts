@@ -49,7 +49,14 @@ const p0Candidates = candidateRegistry.filter((candidate) => candidate.priority 
 assert(p0Candidates.length === 8, `candidate-p0-pool-unexpected:${p0Candidates.length}`);
 assert(p0Candidates.every((candidate) => candidate.rightsResearch.status === "evidence-found"), "candidate-p0-research-incomplete");
 
-const evidenceFoundCount = candidateRegistry.filter((candidate) => candidate.rightsResearch.status === "evidence-found").length;
-assert(evidenceFoundCount === 8, `candidate-batch-a-evidence-count-invalid:${evidenceFoundCount}`);
+const p1Candidates = candidateRegistry.filter((candidate) => candidate.priority === "p1");
+assert(p1Candidates.length === 9, `candidate-p1-pool-unexpected:${p1Candidates.length}`);
+assert(p1Candidates.every((candidate) => candidate.rightsResearch.status === "evidence-found"), "candidate-p1-research-incomplete");
 
-console.log(`25-book candidate registry OK: ${candidateRegistry.length} candidates, ${coveredCollections.size} collections, ${evidenceFoundCount} evidence-backed P0 candidates; none cleared.`);
+const evidenceFoundCount = candidateRegistry.filter((candidate) => candidate.rightsResearch.status === "evidence-found").length;
+assert(evidenceFoundCount === 17, `candidate-batch-ab-evidence-count-invalid:${evidenceFoundCount}`);
+
+const clearedCount = candidateRegistry.filter((candidate) => candidate.rightsResearch.status === "cleared").length;
+assert(clearedCount === 0, `candidate-cleared-count-invalid:${clearedCount}`);
+
+console.log(`25-book candidate registry OK: ${candidateRegistry.length} candidates, ${coveredCollections.size} collections, ${evidenceFoundCount} evidence-backed P0/P1 candidates; none cleared.`);
