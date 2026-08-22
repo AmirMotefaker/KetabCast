@@ -71,6 +71,9 @@ jobs:
       - name: Golden Pipeline v3 dual-voice offline contract
         run: npm run pipeline:golden:dual-voice:validate
 
+      - name: Golden Pipeline v4 controlled live probe contract
+        run: npm run pipeline:golden:live-probe:validate
+
       - name: Shared Persian voice contract
         run: npm run pipeline:voice:validate
 
