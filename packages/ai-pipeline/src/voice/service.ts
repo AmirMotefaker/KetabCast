@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  VoiceProviderError,
   validateVoiceRequest,
   type VoiceProvider,
   type VoiceRequest,
@@ -36,6 +37,7 @@ export class VoiceService {
         return { ...result, retryCount: attempt };
       } catch (error) {
         lastError = error;
+        if (error instanceof VoiceProviderError && !error.retryable) throw error;
       }
     }
 
